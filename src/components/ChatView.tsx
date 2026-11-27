@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, FolderGit2, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Copy, FolderDown, FolderGit2, TriangleAlert } from 'lucide-react';
+import { downloadZip, extractFiles } from '../lib/files';
 import { AtlasLogo } from './AtlasLogo';
 import { Markdown } from './Markdown';
 import { ToolTrace } from './ToolTrace';
@@ -30,6 +31,23 @@ function CopyButton({ text }: { text: string }) {
       className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition"
     >
       {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+    </button>
+  );
+}
+
+/** "Descargar todo (.zip)" cuando la respuesta trae dos o más archivos con nombre. */
+function DownloadAllButton({ markdown }: { markdown: string }) {
+  const files = useMemo(() => extractFiles(markdown), [markdown]);
+  if (files.length < 2) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => downloadZip(files)}
+      title={files.map((f) => f.path).join('\n')}
+      className="h-9 px-3 rounded-full flex items-center gap-1.5 text-sm text-zinc-300 hover:text-zinc-100 hover:bg-white/[0.06] transition"
+    >
+      <FolderDown className="w-4 h-4" />
+      Descargar todo ({files.length} archivos, .zip)
     </button>
   );
 }
@@ -80,8 +98,9 @@ function Turn({ turn, showMeta }: { turn: ChatTurn; showMeta: boolean }) {
           {task?.status === 'completed' && (
             <>
               <Markdown>{task.final_response ?? 'Tarea completada sin salida de texto.'}</Markdown>
-              <div className="mt-3 -ml-2 flex items-center">
+              <div className="mt-3 -ml-2 flex items-center gap-1">
                 <CopyButton text={task.final_response ?? ''} />
+                <DownloadAllButton markdown={task.final_response ?? ''} />
               </div>
             </>
           )}

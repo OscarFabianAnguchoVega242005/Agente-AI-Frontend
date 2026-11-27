@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Download, FileCode2 } from 'lucide-react';
+import { downloadFile, parseCodeInfo } from '../lib/files';
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
+function CodeBlock({ language, path, code }: { language: string; path?: string; code: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard.writeText(code);
@@ -13,16 +14,34 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 
   return (
     <div className="my-4 rounded-xl border border-white/10 bg-[#0d0d0e] overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 bg-white/[0.03] border-b border-white/5 text-xs text-zinc-400">
-        <span className="font-mono">{language || 'código'}</span>
-        <button
-          type="button"
-          onClick={copy}
-          className="flex items-center gap-1.5 hover:text-zinc-100 transition"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? 'Copiado' : 'Copiar'}
-        </button>
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-white/[0.03] border-b border-white/5 text-xs text-zinc-400">
+        <span className="font-mono truncate min-w-0">
+          {path ? (
+            <>
+              <FileCode2 className="inline w-3.5 h-3.5 mr-1.5 -mt-0.5 text-zinc-500" />
+              <span className="text-zinc-200">{path}</span>
+              {language && <span className="text-zinc-500"> · {language}</span>}
+            </>
+          ) : (
+            language || 'código'
+          )}
+        </span>
+        <span className="flex items-center gap-3 shrink-0">
+          {path && (
+            <button
+              type="button"
+              onClick={() => downloadFile(path, code)}
+              className="flex items-center gap-1.5 hover:text-zinc-100 transition"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Descargar
+            </button>
+          )}
+          <button type="button" onClick={copy} className="flex items-center gap-1.5 hover:text-zinc-100 transition">
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copiado' : 'Copiar'}
+          </button>
+        </span>
       </div>
       <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-zinc-200">
         <code>{code}</code>
@@ -41,9 +60,11 @@ const components: Components = {
   pre: ({ children }) => <>{children}</>,
   code: ({ className, children }) => {
     const text = textOf(children);
-    const match = /language-([\w+-]+)/.exec(className ?? '');
+    // El encabezado puede ser "lenguaje" o "lenguaje:ruta/archivo" (```html:index.html)
+    const match = /language-(\S+)/.exec(className ?? '');
     if (match || text.includes('\n')) {
-      return <CodeBlock language={match?.[1] ?? ''} code={text.replace(/\n$/, '')} />;
+      const { language, path } = parseCodeInfo(match?.[1] ?? '');
+      return <CodeBlock language={language} path={path} code={text.replace(/\n$/, '')} />;
     }
     return (
       <code className="px-1.5 py-0.5 rounded-md bg-white/[0.08] text-[0.88em] font-mono text-zinc-100">
