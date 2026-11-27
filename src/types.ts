@@ -3,9 +3,17 @@ export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export interface RepoItem {
   name: string;
+  /** "dueño/nombre" (lo envía el backend; permite repos de organizaciones) */
+  full_name?: string;
   private: boolean;
   default_branch: string;
+  language?: string | null;
   description: string | null;
+}
+
+/** Identificador que se envía al agente: "dueño/nombre" si está disponible. */
+export function repoId(repo: RepoItem): string {
+  return repo.full_name ?? repo.name;
 }
 
 export interface GithubUser {

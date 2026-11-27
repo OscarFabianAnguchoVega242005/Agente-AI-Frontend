@@ -12,7 +12,7 @@ export const MODE_OPTIONS: ModeOption[] = [
   {
     id: 'vibecoding',
     label: 'Vibecoding',
-    description: 'Diseña, programa y sube los cambios a una rama agent/',
+    description: 'Programa en cualquier lenguaje, sube los cambios a una rama agent/ y abre un PR',
     icon: Sparkles,
   },
   {

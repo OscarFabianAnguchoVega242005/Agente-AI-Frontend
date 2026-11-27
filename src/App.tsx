@@ -15,6 +15,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
 import {
   isFinished,
+  repoId,
   type AgentMode,
   type ConversationTurn,
   type GithubUser,
@@ -106,7 +107,7 @@ function Workspace({ email }: { email: string }) {
     setGhUser(data.github?.user ?? null);
     const list = data.github?.repos ?? [];
     setRepos(list);
-    setTargetRepo((prev) => (prev && list.some((r) => r.name === prev) ? prev : (list[0]?.name ?? '')));
+    setTargetRepo((prev) => (prev && list.some((r) => repoId(r) === prev) ? prev : list[0] ? repoId(list[0]) : ''));
   }, []);
 
   const loadTasks = useCallback(async () => {
@@ -317,6 +318,7 @@ function Workspace({ email }: { email: string }) {
       onRepoChange={setTargetRepo}
       ghConnected={ghConnected}
       onOpenConnectors={openConnectors}
+      ownLogin={ghUser?.account_label}
       submitting={submitting || convoBusy}
       placeholder={
         convoBusy ? 'Atlas está respondiendo…' : inConversation ? 'Responde a Atlas' : 'Pídele algo a Atlas'

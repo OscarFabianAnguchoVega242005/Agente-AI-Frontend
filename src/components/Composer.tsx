@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { ArrowUp, Check, ChevronDown, FolderGit2, LoaderCircle, Lock, Plug, Search } from 'lucide-react';
 import { MODE_OPTIONS } from '../lib/modes';
 import { usePopover } from '../hooks/usePopover';
-import type { AgentMode, RepoItem } from '../types';
+import { repoId, type AgentMode, type RepoItem } from '../types';
 
 const MAX_CHARS = 8000;
 
@@ -17,6 +17,7 @@ interface Props {
   onRepoChange: (repo: string) => void;
   ghConnected: boolean;
   onOpenConnectors: () => void;
+  ownLogin?: string;
   submitting: boolean;
   placeholder?: string;
   autoFocus?: boolean;
@@ -75,19 +76,21 @@ function RepoMenu({
   onChange,
   ghConnected,
   onOpenConnectors,
+  ownLogin,
 }: {
   repos: RepoItem[];
   value: string;
   onChange: (repo: string) => void;
   ghConnected: boolean;
   onOpenConnectors: () => void;
+  ownLogin?: string;
 }) {
   const { open, setOpen, ref } = usePopover();
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? repos.filter((r) => r.name.toLowerCase().includes(q)) : repos;
+    return q ? repos.filter((r) => repoId(r).toLowerCase().includes(q)) : repos;
   }, [repos, query]);
 
   if (!ghConnected) {
@@ -114,7 +117,7 @@ function RepoMenu({
         className="h-9 px-3 rounded-full flex items-center gap-1.5 text-sm text-zinc-300 hover:bg-white/[0.06] transition max-w-[220px]"
       >
         <FolderGit2 className="w-4 h-4 shrink-0" />
-        <span className="truncate">{value || 'Sin repositorio'}</span>
+        <span className="truncate">{value ? (value.split('/').pop() ?? value) : 'Sin repositorio'}</span>
         <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
       </button>
 
@@ -148,17 +151,22 @@ function RepoMenu({
             )}
             {filtered.map((r) => (
               <button
-                key={r.name}
+                key={repoId(r)}
                 type="button"
                 onClick={() => {
-                  onChange(r.name);
+                  onChange(repoId(r));
                   setOpen(false);
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/[0.06]"
               >
-                <span className="flex-1 text-left truncate">{r.name}</span>
+                <span className="flex-1 min-w-0 text-left truncate">
+                  {r.name}
+                  {r.full_name && r.full_name.split('/')[0] !== ownLogin && (
+                    <span className="text-zinc-500"> · {r.full_name.split('/')[0]}</span>
+                  )}
+                </span>
                 {r.private && <Lock className="w-3.5 h-3.5 text-zinc-500 shrink-0" />}
-                {value === r.name && <Check className="w-4 h-4 text-[#8ab4f8] shrink-0" />}
+                {value === repoId(r) && <Check className="w-4 h-4 text-[#8ab4f8] shrink-0" />}
               </button>
             ))}
             {filtered.length === 0 && (
@@ -182,6 +190,7 @@ export function Composer({
   onRepoChange,
   ghConnected,
   onOpenConnectors,
+  ownLogin,
   submitting,
   placeholder = 'Pídele algo a Atlas',
   autoFocus = false,
@@ -234,6 +243,7 @@ export function Composer({
           onChange={onRepoChange}
           ghConnected={ghConnected}
           onOpenConnectors={onOpenConnectors}
+          ownLogin={ownLogin}
         />
         <div className="ml-auto flex items-center gap-3">
           {value.length > MAX_CHARS - 1000 && (

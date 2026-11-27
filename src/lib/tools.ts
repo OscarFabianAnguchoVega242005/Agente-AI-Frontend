@@ -4,8 +4,10 @@ import {
   Files,
   FolderTree,
   GitBranch,
+  GitPullRequest,
   Hourglass,
   List,
+  Search,
   Wrench,
   Zap,
   type LucideIcon,
@@ -55,26 +57,44 @@ export function describeStep(step: AgentStep): StepView {
           : `Leyó ${paths.length} archivo${paths.length === 1 ? '' : 's'}: ${preview}${paths.length > 2 ? '…' : ''}`;
       return { icon: Files, label, failed };
     }
+    case 'search_code':
+      return { icon: Search, label: `Buscó "${str(input.query)}" en el código`, failed };
+    case 'commit_changes':
     case 'commit_files_to_branch': {
       const files = Array.isArray(input.files) ? input.files.length : 0;
-      const branch = str(input.newBranch);
-      const repo = str(input.repo);
       const out = parseJson(step.tool_output);
+      // El backend devuelve la rama real (con prefijo agent/ forzado)
+      const branch = (out && str(out.branch)) || str(input.newBranch);
       const owner = out ? str(out.owner) : '';
+      const repo = (out && str(out.repo)) || str(input.repo).split('/').pop() || '';
+      const compareUrl = out ? str(out.compareUrl) : '';
       return {
         icon: GitBranch,
         label: `Subió ${files} archivo${files === 1 ? '' : 's'} a ${branch || 'una rama nueva'}`,
         failed,
         link:
-          owner && repo && branch && !failed
-            ? {
-                href: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree/${branch
-                  .split('/')
-                  .map(encodeURIComponent)
-                  .join('/')}`,
-                text: 'Ver rama',
-              }
-            : undefined,
+          !failed && compareUrl.startsWith('https://github.com/')
+            ? { href: compareUrl, text: 'Ver cambios' }
+            : !failed && owner && repo && branch
+              ? {
+                  href: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree/${branch
+                    .split('/')
+                    .map(encodeURIComponent)
+                    .join('/')}`,
+                  text: 'Ver rama',
+                }
+              : undefined,
+      };
+    }
+    case 'create_pull_request': {
+      const out = parseJson(step.tool_output);
+      const url = out ? str(out.url) : '';
+      const number = out && typeof out.number === 'number' ? out.number : null;
+      return {
+        icon: GitPullRequest,
+        label: number ? `Abrió el Pull Request #${number}` : `Abrió un Pull Request: ${str(input.title)}`,
+        failed,
+        link: !failed && url.startsWith('https://github.com/') ? { href: url, text: 'Ver PR' } : undefined,
       };
     }
     case 'model_fallback':
