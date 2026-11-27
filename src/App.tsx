@@ -358,9 +358,12 @@ function Workspace({ email }: { email: string }) {
   const inConversation = selectedId !== null || showPending;
   const currentChat = selectedId ? tasks.find((t) => t.id === selectedId) : undefined;
 
-  const openPreview = useCallback((files: CodeFile[]) => {
+  const openPreview = useCallback((files: CodeFile[], preferred?: string) => {
     const html = files.filter(isHtmlFile);
-    const entry = html.find((f) => /(^|\/)index\.html?$/i.test(f.path)) ?? html[0];
+    const entry =
+      (preferred ? html.find((f) => f.path === preferred) : undefined) ??
+      html.find((f) => /(^|\/)index\.html?$/i.test(f.path)) ??
+      html[0];
     if (entry) setPreview({ files, entry: entry.path });
   }, []);
 

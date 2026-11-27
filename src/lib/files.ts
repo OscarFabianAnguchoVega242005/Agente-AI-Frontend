@@ -31,14 +31,49 @@ function safePath(raw: string): string | undefined {
   return clean && /^[\w.\-/ ()@+]+$/.test(clean) ? clean.slice(0, 200) : undefined;
 }
 
-/** Extrae los archivos con nombre (```lenguaje:ruta) de una respuesta en Markdown. */
+/** Nombre por defecto para bloques web sin ruta (el modelo no siempre usa ```lenguaje:ruta). */
+const DEFAULT_NAMES: Record<string, string> = {
+  html: 'index.html',
+  htm: 'index.html',
+  css: 'styles.css',
+  js: 'script.js',
+  javascript: 'script.js',
+  svg: 'image.svg',
+};
+
+function uniquePath(path: string, taken: Set<string>): string {
+  if (!taken.has(path)) return path;
+  const dot = path.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [path.slice(0, dot), path.slice(dot)] : [path, ''];
+  for (let i = 2; ; i++) {
+    const candidate = `${base}-${i}${ext}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * Extrae los archivos de una respuesta en Markdown: los bloques ```lenguaje:ruta y, además,
+ * los bloques web sin nombre (html/css/js), a los que se asigna index.html, styles.css, script.js.
+ * Admite vallas de 3 o más acentos graves.
+ */
 export function extractFiles(markdown: string): CodeFile[] {
   const files = new Map<string, CodeFile>();
-  const re = /^```([^\n`]*)\n([\s\S]*?)^```/gm;
+  const re = /^(`{3,})([^\n`]*)\n([\s\S]*?)^\1`*[ \t]*$/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(markdown))) {
-    const { language, path } = parseCodeInfo(m[1] ?? '');
-    if (path) files.set(path, { path, language, content: m[2] ?? '' });
+    const info = (m[2] ?? '').trim();
+    const content = m[3] ?? '';
+    const parsed = parseCodeInfo(info.split(/\s+/)[0] ?? '');
+    const language = parsed.language.toLowerCase();
+    let path = parsed.path;
+
+    if (!path) {
+      const looksHtml = !language && /^\s*(<!doctype html|<html[\s>])/i.test(content);
+      const fallback = DEFAULT_NAMES[looksHtml ? 'html' : language];
+      if (!fallback) continue; // bloques de terminal, ejemplos, etc.
+      path = uniquePath(fallback, new Set(files.keys()));
+    }
+    files.set(path, { path, language: language || (path.split('.').pop() ?? ''), content });
   }
   return [...files.values()];
 }
@@ -76,24 +111,52 @@ export function buildPreviewDocument(files: CodeFile[], entryPath: string): stri
   const entry = files.find((f) => f.path === entryPath);
   if (!entry) return '';
   const byPath = new Map(files.map((f) => [f.path, f]));
+  const cssFiles = files.filter((f) => /\.css$/i.test(f.path));
+  const jsFiles = files.filter((f) => /\.(m?js)$/i.test(f.path));
+  const usedCss = new Set<string>();
+  const usedJs = new Set<string>();
+
+  /** Busca por ruta; si no coincide pero solo hay un archivo de ese tipo, usa ese. */
+  const find = (ref: string, pool: CodeFile[]): CodeFile | undefined => {
+    const resolved = resolveRelative(entry.path, ref);
+    if (resolved === null) return undefined; // externa (CDN)
+    return byPath.get(resolved) ?? (pool.length === 1 ? pool[0] : undefined);
+  };
+
   let html = entry.content;
 
   // <link rel="stylesheet" href="styles.css"> → <style>…</style>
   html = html.replace(/<link\b[^>]*>/gi, (tag) => {
     if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) return tag;
     const href = /href\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
-    const file = href ? byPath.get(resolveRelative(entry.path, href) ?? '') : undefined;
-    return file ? `<style>\n${file.content.replace(/<\/style/gi, '<\\/style')}\n</style>` : tag;
+    const file = href ? find(href, cssFiles) : undefined;
+    if (!file) return tag;
+    usedCss.add(file.path);
+    return `<style>\n${file.content.replace(/<\/style/gi, '<\\/style')}\n</style>`;
   });
 
   // <script src="app.js"></script> → <script>…</script> (conserva type="module", etc.)
   html = html.replace(
     /<script\b([^>]*?)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi,
     (tag, before: string, src: string, after: string) => {
-      const file = byPath.get(resolveRelative(entry.path, src) ?? '');
-      return file ? `<script${before}${after}>\n${file.content.replace(/<\/script/gi, '<\\/script')}\n</script>` : tag;
+      const file = find(src, jsFiles);
+      if (!file) return tag;
+      usedJs.add(file.path);
+      return `<script${before}${after}>\n${file.content.replace(/<\/script/gi, '<\\/script')}\n</script>`;
     }
   );
+
+  // Si el HTML no enlaza el CSS/JS que vino en la respuesta (bloques sueltos), se añaden igualmente
+  const extraCss = cssFiles.filter((f) => !usedCss.has(f.path));
+  const extraJs = jsFiles.filter((f) => !usedJs.has(f.path));
+  if (extraCss.length) {
+    const styles = extraCss.map((f) => `<style>\n${f.content.replace(/<\/style/gi, '<\\/style')}\n</style>`).join('\n');
+    html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${styles}\n</head>`) : styles + html;
+  }
+  if (extraJs.length) {
+    const scripts = extraJs.map((f) => `<script>\n${f.content.replace(/<\/script/gi, '<\\/script')}\n</script>`).join('\n');
+    html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${scripts}\n</body>`) : html + scripts;
+  }
 
   // Fragmentos sin <html>: se envuelven en un documento mínimo
   if (!/<html[\s>]/i.test(html) && !/<body[\s>]/i.test(html)) {

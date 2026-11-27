@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Eye, FolderDown, FolderGit2, TriangleAlert } from 'lucide-react';
 import { downloadZip, extractFiles, isHtmlFile, type CodeFile } from '../lib/files';
 import { AtlasLogo } from './AtlasLogo';
-import { Markdown } from './Markdown';
+import { Markdown, PreviewContext } from './Markdown';
 import { ToolTrace } from './ToolTrace';
 import { modeMeta } from '../lib/modes';
 import { isFinished, type AgentMode, type AgentStep, type TaskDetail } from '../types';
@@ -45,7 +45,7 @@ function Turn({
 }: {
   turn: ChatTurn;
   showMeta: boolean;
-  onPreview?: (files: CodeFile[]) => void;
+  onPreview?: (files: CodeFile[], entry?: string) => void;
 }) {
   const { prompt, mode, targetRepo, task, steps } = turn;
   const running = !task || !isFinished(task.status);
@@ -56,6 +56,10 @@ function Turn({
     [task?.status, task?.final_response]
   );
   const hasHtml = files.some(isHtmlFile);
+  const previewFromBlock = useMemo(
+    () => (hasHtml && onPreview ? (entry?: string) => onPreview(files, entry) : null),
+    [hasHtml, onPreview, files]
+  );
 
   return (
     <div className="space-y-8">
@@ -96,7 +100,9 @@ function Turn({
 
           {task?.status === 'completed' && (
             <>
-              <Markdown>{task.final_response ?? 'Tarea completada sin salida de texto.'}</Markdown>
+              <PreviewContext.Provider value={previewFromBlock}>
+                <Markdown>{task.final_response ?? 'Tarea completada sin salida de texto.'}</Markdown>
+              </PreviewContext.Provider>
               <div className="mt-3 -ml-2 flex flex-wrap items-center gap-1">
                 <CopyButton text={task.final_response ?? ''} />
                 {hasHtml && onPreview && (
@@ -140,7 +146,7 @@ export function ChatView({
   onPreview,
 }: {
   turns: ChatTurn[];
-  onPreview?: (files: CodeFile[]) => void;
+  onPreview?: (files: CodeFile[], entry?: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const last = turns[turns.length - 1];

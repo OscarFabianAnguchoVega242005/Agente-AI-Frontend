@@ -1,11 +1,15 @@
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, Copy, Download, FileCode2 } from 'lucide-react';
+import { Check, Copy, Download, Eye, FileCode2 } from 'lucide-react';
 import { downloadFile, parseCodeInfo } from '../lib/files';
+
+/** Abre la vista previa de la respuesta actual (lo provee cada turno del chat que trae HTML). */
+export const PreviewContext = createContext<((entry?: string) => void) | null>(null);
 
 function CodeBlock({ language, path, code }: { language: string; path?: string; code: string }) {
   const [copied, setCopied] = useState(false);
+  const openPreview = useContext(PreviewContext);
   const copy = () => {
     void navigator.clipboard.writeText(code);
     setCopied(true);
@@ -27,6 +31,16 @@ function CodeBlock({ language, path, code }: { language: string; path?: string; 
           )}
         </span>
         <span className="flex items-center gap-3 shrink-0">
+          {openPreview && (language.toLowerCase() === 'html' || /\.html?$/i.test(path ?? '')) && (
+            <button
+              type="button"
+              onClick={() => openPreview(path)}
+              className="flex items-center gap-1.5 text-[#8ab4f8] hover:text-[#aecbfa] transition"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Vista previa
+            </button>
+          )}
           {path && (
             <button
               type="button"
