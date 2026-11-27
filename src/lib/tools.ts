@@ -1,4 +1,14 @@
-import { Brain, FileText, FolderTree, GitBranch, List, Wrench, type LucideIcon } from 'lucide-react';
+import {
+  Brain,
+  FileText,
+  FolderTree,
+  GitBranch,
+  Hourglass,
+  List,
+  Wrench,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import type { AgentStep } from '../types';
 
 export interface StepView {
@@ -56,6 +66,12 @@ export function describeStep(step: AgentStep): StepView {
               }
             : undefined,
       };
+    }
+    case 'model_fallback':
+      return { icon: Zap, label: 'Cambió al modelo rápido (el modelo Pro no está disponible)', failed: false };
+    case 'rate_limit_wait': {
+      const seconds = typeof input.seconds === 'number' ? input.seconds : 0;
+      return { icon: Hourglass, label: `Esperó ${seconds} s por el límite del plan gratuito`, failed: false };
     }
     case 'save_project_memory':
       return { icon: Brain, label: `Guardó notas del proyecto ${str(input.repo_name)}`.trim(), failed };
