@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { LoaderCircle } from 'lucide-react';
+import { Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { AtlasLogo } from './AtlasLogo';
 
@@ -8,6 +8,7 @@ export function AuthScreen() {
   const [password, setPassword] = useState('');
   const [isRegister, setIsRegister] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState<{ type: 'error' | 'ok'; text: string } | null>(null);
 
   const submit = async (e: FormEvent) => {
@@ -72,16 +73,28 @@ export function AuthScreen() {
             onChange={(e) => setEmail(e.target.value)}
             className={inputCls}
           />
-          <input
-            type="password"
-            required
-            minLength={6}
-            autoComplete={isRegister ? 'new-password' : 'current-password'}
-            placeholder="Contraseña"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={inputCls}
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              required
+              minLength={6}
+              autoComplete={isRegister ? 'new-password' : 'current-password'}
+              placeholder="Contraseña"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`${inputCls} pr-12`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              aria-pressed={showPassword}
+              title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition"
+            >
+              {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+            </button>
+          </div>
 
           <button
             type="submit"

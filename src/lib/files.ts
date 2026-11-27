@@ -90,7 +90,7 @@ function dirname(path: string): string {
 }
 
 /** Resuelve una ruta relativa (href/src) respecto al HTML de entrada. */
-function resolveRelative(fromHtml: string, ref: string): string | null {
+export function resolveRelative(fromHtml: string, ref: string): string | null {
   if (/^(?:[a-z]+:)?\/\//i.test(ref) || ref.startsWith('data:') || ref.startsWith('#')) return null; // externa
   const clean = ref.split(/[?#]/)[0] ?? '';
   const parts = (clean.startsWith('/') ? clean.slice(1) : dirname(fromHtml) + clean).split('/');
@@ -162,8 +162,55 @@ export function buildPreviewDocument(files: CodeFile[], entryPath: string): stri
   if (!/<html[\s>]/i.test(html) && !/<body[\s>]/i.test(html)) {
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${html}</body></html>`;
   }
-  return html;
+
+  // Script de navegación: va primero para que se ejecute antes que el de la página
+  return /<head[^>]*>/i.test(html)
+    ? html.replace(/<head[^>]*>/i, (tag) => `${tag}\n${PREVIEW_NAV_SCRIPT}`)
+    : PREVIEW_NAV_SCRIPT + html;
 }
+
+/** Mensaje que la vista previa envía a Atlas para abrir otra página del proyecto. */
+export const PREVIEW_NAVIGATE_MESSAGE = 'atlas-preview-navigate';
+
+/**
+ * Dentro de un iframe srcdoc, los enlaces relativos se resuelven contra la URL de Atlas:
+ * un "#contacto" o un formulario sin action navegarían el iframe a Atlas.
+ * Este script:
+ * - "#ancla": hace scroll a la sección en la misma página.
+ * - Enlaces http(s) externos: los abre en una pestaña nueva.
+ * - Otros enlaces relativos (otra.html): pide a Atlas que cambie de página (postMessage).
+ * - Formularios sin action externa: evita que recarguen la vista previa.
+ */
+const PREVIEW_NAV_SCRIPT = `<script>
+(function () {
+  function scrollToHash(hash) {
+    var id = decodeURIComponent(hash.replace(/^#/, ''));
+    if (!id) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    var el = document.getElementById(id) || document.getElementsByName(id)[0];
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    // Sin elemento con ese id (p. ej. routers "#/ruta"): cambia el hash del propio documento
+    try { location.hash = '#' + id; } catch (err) {}
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var a = t && t.closest ? t.closest('a[href]') : null;
+    if (!a || e.defaultPrevented) return;
+    var href = (a.getAttribute('href') || '').trim();
+    if (/^javascript:/i.test(href)) return;
+    e.preventDefault();
+    if (href === '' || href.charAt(0) === '#') { scrollToHash(href); return; }
+    if (/^(https?:)?\\/\\//i.test(href)) { window.open(a.href, '_blank', 'noopener,noreferrer'); return; }
+    if (/^(mailto|tel|sms):/i.test(href)) return;
+    var hashIndex = href.indexOf('#');
+    parent.postMessage({ type: '${'atlas-preview-navigate'}', href: hashIndex === -1 ? href : href.slice(0, hashIndex) }, '*');
+  }, true);
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    var action = form && form.getAttribute ? (form.getAttribute('action') || '') : '';
+    if (!/^https?:\\/\\//i.test(action)) e.preventDefault();
+  }, true);
+})();
+</script>`;
 
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Code2, Download, Eye, FolderDown, Monitor, RotateCw, Smartphone, Tablet, X } from 'lucide-react';
 import { Markdown } from './Markdown';
-import { buildPreviewDocument, downloadFile, downloadZip, isHtmlFile, type CodeFile } from '../lib/files';
+import {
+  buildPreviewDocument,
+  downloadFile,
+  downloadZip,
+  isHtmlFile,
+  PREVIEW_NAVIGATE_MESSAGE,
+  resolveRelative,
+  type CodeFile,
+} from '../lib/files';
 
 export interface PreviewState {
   files: CodeFile[];
@@ -28,7 +36,8 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
   const [reloadKey, setReloadKey] = useState(0);
   const [codeFile, setCodeFile] = useState(preview.entry);
 
-  const htmlFiles = preview.files.filter(isHtmlFile);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const htmlFiles = useMemo(() => preview.files.filter(isHtmlFile), [preview.files]);
   const doc = useMemo(() => buildPreviewDocument(preview.files, preview.entry), [preview]);
   const shownCode = preview.files.find((f) => f.path === codeFile) ?? preview.files[0];
 
@@ -43,6 +52,23 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Enlaces entre páginas del proyecto (p. ej. "nosotros.html") dentro de la vista previa
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      // Solo se aceptan mensajes del iframe de la vista previa
+      if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
+      const data = e.data as { type?: unknown; href?: unknown };
+      if (data?.type !== PREVIEW_NAVIGATE_MESSAGE || typeof data.href !== 'string') return;
+      const target = resolveRelative(preview.entry, data.href);
+      if (target && htmlFiles.some((f) => f.path === target)) {
+        setTab('preview');
+        onChangeEntry(target);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [preview.entry, htmlFiles, onChangeEntry]);
 
   const btn = (active: boolean) =>
     `h-8 px-2.5 rounded-full flex items-center gap-1.5 text-xs transition ${
@@ -147,10 +173,11 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
         {tab === 'preview' ? (
           <div className="h-full w-full flex justify-center bg-[#0d0d0e] p-0 sm:p-3">
             <iframe
+              ref={iframeRef}
               key={`${preview.entry}-${reloadKey}`}
               title="Vista previa de la página"
               srcDoc={doc}
-              sandbox="allow-scripts allow-forms allow-modals allow-popups"
+              sandbox="allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
               referrerPolicy="no-referrer"
               className="h-full bg-white sm:rounded-lg shadow-2xl transition-[width] duration-200"
               style={{ width: DEVICE_WIDTH[device], maxWidth: '100%' }}
