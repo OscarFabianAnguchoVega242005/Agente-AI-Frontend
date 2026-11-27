@@ -177,7 +177,7 @@ function Workspace({ email }: { email: string }) {
           return;
         }
       }
-      timer = setTimeout(() => void tick(), 2500);
+      timer = setTimeout(() => void tick(), 1200);
     };
 
     void tick();
