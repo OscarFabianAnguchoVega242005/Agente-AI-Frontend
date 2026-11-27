@@ -47,6 +47,15 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
 
+  githubOAuthStart: () =>
+    request<{ url: string; state: string }>('/api/connectors/github/oauth/start', { method: 'POST' }),
+
+  githubOAuthExchange: (code: string, state: string) =>
+    request<{ connected: true; username: string; avatar_url: string }>('/api/connectors/github/oauth/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code, state }),
+    }),
+
   disconnect: (provider: 'github') =>
     request<{ disconnected: true }>(`/api/connectors/${provider}`, { method: 'DELETE' }),
 

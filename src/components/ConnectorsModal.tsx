@@ -1,25 +1,40 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ExternalLink, FolderGit2, LoaderCircle, Lock, Mail, ShieldCheck, X } from 'lucide-react';
+import { ChevronDown, ExternalLink, Github, LoaderCircle, Lock, Mail, ShieldCheck, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { startGithubOAuth } from '../lib/githubOAuth';
 import type { GithubUser, RepoItem } from '../types';
+
+export type Notice = { type: 'error' | 'ok' | 'info'; text: string } | null;
 
 interface Props {
   open: boolean;
   onClose: () => void;
   ghConnected: boolean;
+  oauthAvailable: boolean;
   ghUser: GithubUser | null;
   repos: RepoItem[];
   onChanged: () => Promise<void>;
+  notice: Notice;
+  onNotice: (notice: Notice) => void;
+  /** true mientras se procesa la vuelta desde GitHub */
+  completing: boolean;
 }
 
-export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onChanged }: Props) {
+export function ConnectorsModal({
+  open,
+  onClose,
+  ghConnected,
+  oauthAvailable,
+  ghUser,
+  repos,
+  onChanged,
+  notice,
+  onNotice,
+  completing,
+}: Props) {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'error' | 'ok'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (open) setMsg(null);
-  }, [open]);
+  const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -32,18 +47,31 @@ export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onC
 
   if (!open) return null;
 
-  const connect = async (e: FormEvent) => {
+  const working = busy || completing;
+
+  const connectOAuth = async () => {
+    setBusy(true);
+    onNotice(null);
+    try {
+      await startGithubOAuth(); // redirige a GitHub
+    } catch (err) {
+      onNotice({ type: 'error', text: (err as Error).message });
+      setBusy(false);
+    }
+  };
+
+  const connectToken = async (e: FormEvent) => {
     e.preventDefault();
     if (!token.trim()) return;
     setBusy(true);
-    setMsg(null);
+    onNotice(null);
     try {
       const data = await api.connectGithub(token.trim());
       setToken('');
       await onChanged();
-      setMsg({ type: 'ok', text: `Conectado como @${data.username}` });
+      onNotice({ type: 'ok', text: `Conectado como @${data.username}` });
     } catch (err) {
-      setMsg({ type: 'error', text: (err as Error).message });
+      onNotice({ type: 'error', text: (err as Error).message });
     } finally {
       setBusy(false);
     }
@@ -51,17 +79,53 @@ export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onC
 
   const disconnect = async () => {
     setBusy(true);
-    setMsg(null);
+    onNotice(null);
     try {
       await api.disconnect('github');
       await onChanged();
-      setMsg({ type: 'ok', text: 'Cuenta de GitHub desvinculada.' });
+      onNotice({ type: 'ok', text: 'Cuenta de GitHub desvinculada.' });
     } catch (err) {
-      setMsg({ type: 'error', text: (err as Error).message });
+      onNotice({ type: 'error', text: (err as Error).message });
     } finally {
       setBusy(false);
     }
   };
+
+  const tokenForm = (
+    <form onSubmit={connectToken} className="space-y-3">
+      <label htmlFor="gh-token" className="block text-xs text-zinc-400">
+        Personal Access Token con permiso <code className="text-zinc-200">repo</code>
+      </label>
+      <input
+        id="gh-token"
+        type="password"
+        autoComplete="off"
+        required
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder="github_pat_… o ghp_…"
+        className="w-full h-11 px-4 rounded-xl bg-[#1e1f20] border border-white/10 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-[#8ab4f8]/60 transition"
+      />
+      <div className="flex items-center justify-between gap-3">
+        <a
+          href="https://github.com/settings/tokens"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-[#8ab4f8] hover:underline flex items-center gap-1"
+        >
+          Crear token <ExternalLink className="w-3 h-3" />
+        </a>
+        <button
+          type="submit"
+          disabled={working || !token.trim()}
+          className="h-9 px-4 rounded-full bg-white/10 text-zinc-100 text-sm font-medium hover:bg-white/15 disabled:opacity-40 flex items-center gap-2 transition"
+        >
+          {busy && <LoaderCircle className="w-4 h-4 animate-spin" />}
+          Conectar con token
+        </button>
+      </div>
+    </form>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6">
@@ -96,7 +160,7 @@ export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onC
                 <img src={ghUser.avatar_url} alt="" className="w-10 h-10 rounded-full border border-white/10" />
               ) : (
                 <span className="w-10 h-10 rounded-full bg-white/[0.06] flex items-center justify-center">
-                  <FolderGit2 className="w-5 h-5 text-zinc-200" />
+                  <Github className="w-5 h-5 text-zinc-200" />
                 </span>
               )}
               <div className="flex-1 min-w-0">
@@ -117,7 +181,7 @@ export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onC
               {ghConnected && (
                 <button
                   onClick={() => void disconnect()}
-                  disabled={busy}
+                  disabled={working}
                   className="h-8 px-3 rounded-full text-xs text-red-300 border border-red-400/20 hover:bg-red-400/10 disabled:opacity-50 transition"
                 >
                   Desconectar
@@ -126,39 +190,32 @@ export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onC
             </div>
 
             {!ghConnected && (
-              <form onSubmit={connect} className="mt-4 space-y-3">
-                <label htmlFor="gh-token" className="block text-xs text-zinc-400">
-                  Personal Access Token con permiso <code className="text-zinc-200">repo</code>
-                </label>
-                <input
-                  id="gh-token"
-                  type="password"
-                  autoComplete="off"
-                  required
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="github_pat_… o ghp_…"
-                  className="w-full h-11 px-4 rounded-xl bg-[#1e1f20] border border-white/10 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-[#8ab4f8]/60 transition"
-                />
-                <div className="flex items-center justify-between gap-3">
-                  <a
-                    href="https://github.com/settings/tokens"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-[#8ab4f8] hover:underline flex items-center gap-1"
-                  >
-                    Crear token <ExternalLink className="w-3 h-3" />
-                  </a>
-                  <button
-                    type="submit"
-                    disabled={busy || !token.trim()}
-                    className="h-9 px-4 rounded-full bg-zinc-100 text-zinc-900 text-sm font-medium hover:bg-white disabled:opacity-40 flex items-center gap-2 transition"
-                  >
-                    {busy && <LoaderCircle className="w-4 h-4 animate-spin" />}
-                    {busy ? 'Verificando…' : 'Conectar'}
-                  </button>
-                </div>
-              </form>
+              <div className="mt-4 space-y-3">
+                {oauthAvailable ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void connectOAuth()}
+                      disabled={working}
+                      className="w-full h-11 rounded-full bg-zinc-100 hover:bg-white text-zinc-900 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition active:scale-[0.99]"
+                    >
+                      {working ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
+                      {completing ? 'Conectando…' : 'Conectar con GitHub'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(!showToken)}
+                      className="w-full flex items-center justify-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition"
+                    >
+                      Usar un token en su lugar
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showToken ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showToken && <div className="pt-1">{tokenForm}</div>}
+                  </>
+                ) : (
+                  tokenForm
+                )}
+              </div>
             )}
           </div>
 
@@ -174,8 +231,14 @@ export function ConnectorsModal({ open, onClose, ghConnected, ghUser, repos, onC
             <Lock className="w-4 h-4 text-zinc-500" />
           </div>
 
-          {msg && (
-            <p className={`text-sm px-1 ${msg.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>{msg.text}</p>
+          {notice && (
+            <p
+              className={`text-sm px-1 ${
+                notice.type === 'error' ? 'text-red-300' : notice.type === 'ok' ? 'text-emerald-300' : 'text-zinc-300'
+              }`}
+            >
+              {notice.text}
+            </p>
           )}
 
           <p className="flex items-center gap-2 text-xs text-zinc-500 px-1 pt-1">

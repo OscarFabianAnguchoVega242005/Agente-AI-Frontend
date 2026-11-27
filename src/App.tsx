@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { LoaderCircle, Menu, Plug, RefreshCw, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -10,7 +10,8 @@ import { Sidebar } from './components/Sidebar';
 import { Composer } from './components/Composer';
 import { ChatView } from './components/ChatView';
 import { Greeting, Suggestions } from './components/Welcome';
-import { ConnectorsModal } from './components/ConnectorsModal';
+import { ConnectorsModal, type Notice } from './components/ConnectorsModal';
+import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
 import {
   isFinished,
   type AgentMode,
@@ -62,7 +63,11 @@ function Workspace({ email }: { email: string }) {
   const [ghConnected, setGhConnected] = useState(false);
   const [ghUser, setGhUser] = useState<GithubUser | null>(null);
   const [repos, setRepos] = useState<RepoItem[]>([]);
-  const [connectorsOpen, setConnectorsOpen] = useState(false);
+  const [oauthAvailable, setOauthAvailable] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(isGithubCallback);
+  const [connectorNotice, setConnectorNotice] = useState<Notice>(null);
+  const [oauthCompleting, setOauthCompleting] = useState(isGithubCallback);
+  const oauthHandled = useRef(false);
 
   // Tareas
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
@@ -87,6 +92,7 @@ function Workspace({ email }: { email: string }) {
   const loadConnectors = useCallback(async () => {
     const data = await api.getConnectors();
     setGhConnected(Boolean(data.github?.connected));
+    setOauthAvailable(Boolean(data.github?.oauthAvailable));
     setGhUser(data.github?.user ?? null);
     const list = data.github?.repos ?? [];
     setRepos(list);
@@ -113,6 +119,19 @@ function Workspace({ email }: { email: string }) {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  // Vuelta desde GitHub tras pulsar "Autorizar" (/github/callback?code=…&state=…)
+  useEffect(() => {
+    if (!isGithubCallback() || oauthHandled.current) return;
+    oauthHandled.current = true;
+    completeGithubOAuth()
+      .then(async ({ username }) => {
+        await loadConnectors().catch(() => undefined);
+        setConnectorNotice({ type: 'ok', text: `Conectado como @${username}` });
+      })
+      .catch((err: Error) => setConnectorNotice({ type: 'error', text: err.message }))
+      .finally(() => setOauthCompleting(false));
+  }, [loadConnectors]);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, sidebarExpanded ? '1' : '0');
@@ -203,6 +222,7 @@ function Workspace({ email }: { email: string }) {
 
   const openConnectors = () => {
     setMobileOpen(false);
+    if (!oauthCompleting) setConnectorNotice(null);
     setConnectorsOpen(true);
   };
 
@@ -346,9 +366,13 @@ function Workspace({ email }: { email: string }) {
         open={connectorsOpen}
         onClose={() => setConnectorsOpen(false)}
         ghConnected={ghConnected}
+        oauthAvailable={oauthAvailable}
         ghUser={ghUser}
         repos={repos}
         onChanged={loadConnectors}
+        notice={connectorNotice}
+        onNotice={setConnectorNotice}
+        completing={oauthCompleting}
       />
     </div>
   );

@@ -39,6 +39,7 @@ export interface AgentStep {
 export interface ConnectorsResponse {
   github: {
     connected: boolean;
+    oauthAvailable?: boolean;
     user?: GithubUser;
     repos: RepoItem[];
   };
