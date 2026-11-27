@@ -7,6 +7,7 @@ import {
   GitBranch,
   GitPullRequest,
   Hourglass,
+  KeyRound,
   List,
   Search,
   Wrench,
@@ -86,6 +87,18 @@ export function describeStep(step: AgentStep): StepView {
                 }
               : undefined,
       };
+    }
+    case 'scan_secrets': {
+      const out = parseJson(step.tool_output);
+      const count = out && typeof out.findings_count === 'number' ? out.findings_count : null;
+      const scanned = out && typeof out.files_scanned === 'number' ? out.files_scanned : null;
+      const label =
+        count === null
+          ? 'Escaneó el repositorio en busca de credenciales'
+          : count === 0
+            ? `Escaneó ${scanned ?? ''} archivos: sin credenciales expuestas`
+            : `Escaneó ${scanned ?? ''} archivos: ${count} posible${count === 1 ? '' : 's'} credencial${count === 1 ? '' : 'es'} expuesta${count === 1 ? '' : 's'}`;
+      return { icon: KeyRound, label: label.replace(/\s+/g, ' '), failed: failed || (count ?? 0) > 0 };
     }
     case 'run_checks': {
       const out = parseJson(step.tool_output);
