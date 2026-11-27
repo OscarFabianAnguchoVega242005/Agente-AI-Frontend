@@ -154,6 +154,10 @@ export function describeStep(step: AgentStep): StepView {
         label: str(input.to) ? `Cambió al modelo ${str(input.to)} (${str(input.from) || 'el anterior'} sin cuota disponible)` : 'Cambió de modelo (sin cuota disponible)',
         failed: false,
       };
+    case 'overload_wait': {
+      const seconds = typeof input.seconds === 'number' ? input.seconds : 0;
+      return { icon: Hourglass, label: `Modelo saturado: reintentando en ${seconds} s`, failed: false };
+    }
     case 'rate_limit_wait': {
       const seconds = typeof input.seconds === 'number' ? input.seconds : 0;
       return { icon: Hourglass, label: `Esperó ${seconds} s por el límite del plan gratuito`, failed: false };
