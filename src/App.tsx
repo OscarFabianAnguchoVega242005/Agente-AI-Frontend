@@ -107,7 +107,8 @@ function Workspace({ email }: { email: string }) {
     setGhUser(data.github?.user ?? null);
     const list = data.github?.repos ?? [];
     setRepos(list);
-    setTargetRepo((prev) => (prev && list.some((r) => repoId(r) === prev) ? prev : list[0] ? repoId(list[0]) : ''));
+    // Nunca se preselecciona un repositorio: solo se conserva el que el usuario eligió, si sigue existiendo
+    setTargetRepo((prev) => (prev && list.some((r) => repoId(r) === prev) ? prev : ''));
   }, []);
 
   const loadTasks = useCallback(async () => {
@@ -150,7 +151,10 @@ function Workspace({ email }: { email: string }) {
 
   // Navegación con atrás/adelante del navegador
   useEffect(() => {
-    const onPop = () => setSelectedId(taskIdFromUrl());
+    const onPop = () => {
+      setTargetRepo('');
+      setSelectedId(taskIdFromUrl());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -161,6 +165,15 @@ function Workspace({ email }: { email: string }) {
     setSelectedId(id);
     setMobileOpen(false);
   }, []);
+
+  /** Cambio de chat iniciado por el usuario: el repositorio vuelve a "Sin repositorio" por seguridad. */
+  const openChat = useCallback(
+    (id: string | null) => {
+      setTargetRepo('');
+      navigate(id);
+    },
+    [navigate]
+  );
 
   // Polling de la conversación seleccionada mientras algún mensaje siga en curso
   useEffect(() => {
@@ -337,9 +350,9 @@ function Workspace({ email }: { email: string }) {
         tasks={tasks}
         loading={tasksLoading}
         selectedId={selectedId}
-        onSelect={navigate}
+        onSelect={openChat}
         onRequestDelete={setDeleteTarget}
-        onNew={() => navigate(null)}
+        onNew={() => openChat(null)}
         email={email}
         ghConnected={ghConnected}
         onOpenConnectors={openConnectors}
@@ -356,7 +369,7 @@ function Workspace({ email }: { email: string }) {
             <Menu className="w-5 h-5" />
           </button>
           <button
-            onClick={() => navigate(null)}
+            onClick={() => openChat(null)}
             className="flex items-center gap-2 px-2 h-10 rounded-xl hover:bg-white/[0.04] transition"
           >
             <span className="text-xl font-medium tracking-tight text-zinc-100">Atlas</span>
