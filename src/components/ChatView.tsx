@@ -6,7 +6,9 @@ import { ToolTrace } from './ToolTrace';
 import { modeMeta } from '../lib/modes';
 import { isFinished, type AgentMode, type AgentStep, type TaskDetail } from '../types';
 
-interface Props {
+/** Un turno visible: mensaje del usuario + respuesta (task es null mientras se envía). */
+export interface ChatTurn {
+  key: string;
   prompt: string;
   mode: AgentMode;
   targetRepo: string | null;
@@ -32,33 +34,31 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function ChatView({ prompt, mode, targetRepo, task, steps }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+function Turn({ turn, showMeta }: { turn: ChatTurn; showMeta: boolean }) {
+  const { prompt, mode, targetRepo, task, steps } = turn;
   const running = !task || !isFinished(task.status);
   const meta = modeMeta(mode);
   const ModeIcon = meta.icon;
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [steps.length, task?.status]);
-
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 pb-10 space-y-10">
+    <div className="space-y-8">
       {/* Mensaje del usuario */}
       <div className="flex flex-col items-end gap-2 animate-rise">
         <div className="max-w-[85%] rounded-3xl rounded-tr-lg bg-[#2a2b2d] px-5 py-3 text-[15px] leading-7 text-zinc-100 whitespace-pre-wrap break-words">
           {prompt}
         </div>
-        <div className="flex items-center gap-3 text-xs text-zinc-500 pr-2">
-          <span className="flex items-center gap-1">
-            <ModeIcon className="w-3.5 h-3.5" /> {meta.label}
-          </span>
-          {targetRepo && (
-            <span className="flex items-center gap-1 font-mono">
-              <FolderGit2 className="w-3.5 h-3.5" /> {targetRepo}
+        {showMeta && (
+          <div className="flex items-center gap-3 text-xs text-zinc-500 pr-2">
+            <span className="flex items-center gap-1">
+              <ModeIcon className="w-3.5 h-3.5" /> {meta.label}
             </span>
-          )}
-        </div>
+            {targetRepo && (
+              <span className="flex items-center gap-1 font-mono">
+                <FolderGit2 className="w-3.5 h-3.5" /> {targetRepo}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Respuesta del agente */}
@@ -97,7 +97,26 @@ export function ChatView({ prompt, mode, targetRepo, task, steps }: Props) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
 
+export function ChatView({ turns }: { turns: ChatTurn[] }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const last = turns[turns.length - 1];
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [turns.length, last?.steps.length, last?.task?.status]);
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 pb-10 space-y-10">
+      {turns.map((turn, i) => {
+        const prev = turns[i - 1];
+        // Solo muestra modo/repo cuando cambian respecto al turno anterior
+        const showMeta = !prev || prev.mode !== turn.mode || prev.targetRepo !== turn.targetRepo;
+        return <Turn key={turn.key} turn={turn} showMeta={showMeta} />;
+      })}
       <div ref={bottomRef} />
     </div>
   );

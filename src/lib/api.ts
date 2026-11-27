@@ -1,5 +1,5 @@
 import { supabase, API_BASE_URL } from './supabase';
-import type { AgentMode, AgentStep, ConnectorsResponse, TaskDetail, TaskSummary } from '../types';
+import type { AgentMode, ConnectorsResponse, ConversationTurn, TaskSummary } from '../types';
 
 export class ApiError extends Error {
   constructor(
@@ -61,10 +61,13 @@ export const api = {
 
   listTasks: () => request<{ tasks: TaskSummary[] }>('/api/tasks'),
 
-  getTask: (id: string) => request<{ task: TaskDetail; steps: AgentStep[] }>(`/api/tasks/${id}`),
+  getConversation: (id: string) => request<{ turns: ConversationTurn[] }>(`/api/conversations/${id}`),
 
-  createTask: (payload: { prompt: string; mode: AgentMode; targetRepo?: string }) =>
-    request<{ taskId: string; status: string }>('/api/tasks', {
+  deleteConversation: (id: string) =>
+    request<{ deleted: true }>(`/api/conversations/${id}`, { method: 'DELETE' }),
+
+  createTask: (payload: { prompt: string; mode: AgentMode; targetRepo?: string; conversationId?: string }) =>
+    request<{ taskId: string; conversationId: string; status: string }>('/api/tasks', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

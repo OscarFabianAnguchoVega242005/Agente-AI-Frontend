@@ -187,7 +187,7 @@ export function Composer({
   autoFocus = false,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canSend = value.trim().length >= 3 && value.length <= MAX_CHARS && !submitting;
+  const canSend = value.trim().length >= 1 && value.length <= MAX_CHARS && !submitting;
 
   useEffect(() => {
     const el = textareaRef.current;

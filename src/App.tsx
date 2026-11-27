@@ -8,17 +8,17 @@ import { AuthScreen } from './components/AuthScreen';
 import { AtlasLogo } from './components/AtlasLogo';
 import { Sidebar } from './components/Sidebar';
 import { Composer } from './components/Composer';
-import { ChatView } from './components/ChatView';
+import { ChatView, type ChatTurn } from './components/ChatView';
 import { Greeting, Suggestions } from './components/Welcome';
 import { ConnectorsModal, type Notice } from './components/ConnectorsModal';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
 import {
   isFinished,
   type AgentMode,
-  type AgentStep,
+  type ConversationTurn,
   type GithubUser,
   type RepoItem,
-  type TaskDetail,
   type TaskSummary,
 } from './types';
 
@@ -69,20 +69,30 @@ function Workspace({ email }: { email: string }) {
   const [oauthCompleting, setOauthCompleting] = useState(isGithubCallback);
   const oauthHandled = useRef(false);
 
-  // Tareas
+  // Conversaciones (cada una es una tarea raíz con sus mensajes de seguimiento)
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(taskIdFromUrl);
-  const [detail, setDetail] = useState<{ task: TaskDetail; steps: AgentStep[] } | null>(null);
+  const [convo, setConvo] = useState<{ id: string; turns: ConversationTurn[] } | null>(null);
+  const [pollKey, setPollKey] = useState(0);
 
   // Composer
   const [draft, setDraft] = useState('');
   const [mode, setMode] = useState<AgentMode>('vibecoding');
   const [targetRepo, setTargetRepo] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [pending, setPending] = useState<{ prompt: string; mode: AgentMode; targetRepo: string | null } | null>(
-    null
-  );
+  /** Mensaje recién enviado que aún no aparece en la conversación cargada del servidor. */
+  const [pending, setPending] = useState<{
+    prompt: string;
+    mode: AgentMode;
+    targetRepo: string | null;
+    conversationId: string | null;
+    taskId?: string;
+  } | null>(null);
+
+  // Eliminar chat
+  const [deleteTarget, setDeleteTarget] = useState<TaskSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // UI
   const [error, setError] = useState<string | null>(null);
@@ -151,28 +161,34 @@ function Workspace({ email }: { email: string }) {
     setMobileOpen(false);
   }, []);
 
-  // Polling de la tarea seleccionada hasta que termine
+  // Polling de la conversación seleccionada mientras algún mensaje siga en curso
   useEffect(() => {
     if (!selectedId) {
-      setDetail(null);
+      setConvo(null);
       return;
     }
-    setDetail((prev) => (prev?.task.id === selectedId ? prev : null));
+    setConvo((prev) => (prev?.id === selectedId ? prev : null));
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       try {
-        const data = await api.getTask(selectedId);
+        const { turns } = await api.getConversation(selectedId);
         if (cancelled) return;
-        setDetail(data);
-        setTasks((prev) => prev.map((t) => (t.id === data.task.id ? { ...t, status: data.task.status } : t)));
-        if (isFinished(data.task.status)) return;
+        setConvo({ id: selectedId, turns });
+        setPending((p) => (p?.taskId && turns.some((t) => t.task.id === p.taskId) ? null : p));
+
+        const busy = turns.some((t) => !isFinished(t.task.status));
+        const lastStatus = turns[turns.length - 1]?.task.status;
+        setTasks((prev) =>
+          prev.map((t) => (t.id === selectedId ? { ...t, status: busy ? 'running' : (lastStatus ?? t.status) } : t))
+        );
+        if (!busy) return;
       } catch (err) {
         if (cancelled) return;
         if ((err as { status?: number }).status === 404) {
-          setError('No se encontró esa tarea.');
+          setError('No se encontró ese chat.');
           navigate(null);
           return;
         }
@@ -185,38 +201,76 @@ function Workspace({ email }: { email: string }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [selectedId, navigate]);
+  }, [selectedId, pollKey, navigate]);
+
+  const currentTurns = convo && convo.id === selectedId ? convo.turns : [];
+  const showPending = pending !== null && pending.conversationId === selectedId;
+  const convoBusy = showPending || currentTurns.some((t) => !isFinished(t.task.status));
 
   const submitTask = async () => {
     const text = draft.trim();
-    if (text.length < 3 || submitting) return;
+    if (!text || submitting || convoBusy) return;
 
     const repo = targetRepo || null;
+    const continuing = selectedId; // null = chat nuevo
     setSubmitting(true);
-    setPending({ prompt: text, mode, targetRepo: repo });
+    setPending({ prompt: text, mode, targetRepo: repo, conversationId: continuing });
     setDraft('');
-    navigate(null);
 
     try {
-      const { taskId } = await api.createTask({ prompt: text, mode, targetRepo: repo ?? undefined });
-      setTasks((prev) => [
-        {
-          id: taskId,
-          prompt: text,
-          mode,
-          target_repo: repo,
-          status: 'running',
-          created_at: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-      navigate(taskId);
+      const { taskId, conversationId } = await api.createTask({
+        prompt: text,
+        mode,
+        targetRepo: repo ?? undefined,
+        conversationId: continuing ?? undefined,
+      });
+      const now = new Date().toISOString();
+      setPending({ prompt: text, mode, targetRepo: repo, conversationId, taskId });
+
+      if (continuing) {
+        // Sube el chat al principio del historial y vuelve a consultar
+        setTasks((prev) => {
+          const current = prev.find((t) => t.id === continuing);
+          if (!current) return prev;
+          return [{ ...current, status: 'running', updated_at: now }, ...prev.filter((t) => t.id !== continuing)];
+        });
+        setPollKey((k) => k + 1);
+      } else {
+        setTasks((prev) => [
+          {
+            id: conversationId,
+            prompt: text,
+            mode,
+            target_repo: repo,
+            status: 'running',
+            created_at: now,
+            updated_at: now,
+          },
+          ...prev,
+        ]);
+        navigate(conversationId);
+      }
     } catch (err) {
       setError((err as Error).message);
       setDraft(text);
-    } finally {
       setPending(null);
+    } finally {
       setSubmitting(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.deleteConversation(deleteTarget.id);
+      setTasks((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      if (selectedId === deleteTarget.id) navigate(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -226,19 +280,30 @@ function Workspace({ email }: { email: string }) {
     setConnectorsOpen(true);
   };
 
-  // Datos de la conversación visible
-  const summary = selectedId ? tasks.find((t) => t.id === selectedId) : undefined;
-  const conversation = pending
-    ? { prompt: pending.prompt, mode: pending.mode, targetRepo: pending.targetRepo, task: null, steps: [] }
-    : selectedId
-      ? {
-          prompt: detail?.task.prompt ?? summary?.prompt ?? '',
-          mode: detail?.task.mode ?? summary?.mode ?? 'general',
-          targetRepo: detail?.task.target_repo ?? summary?.target_repo ?? null,
-          task: detail?.task ?? null,
-          steps: detail?.steps ?? [],
-        }
-      : null;
+  // Turnos visibles: los del servidor + el mensaje recién enviado
+  const chatTurns: ChatTurn[] = [
+    ...currentTurns.map((t) => ({
+      key: t.task.id,
+      prompt: t.task.prompt,
+      mode: t.task.mode,
+      targetRepo: t.task.target_repo,
+      task: t.task,
+      steps: t.steps,
+    })),
+    ...(showPending && pending
+      ? [
+          {
+            key: pending.taskId ?? 'pending',
+            prompt: pending.prompt,
+            mode: pending.mode,
+            targetRepo: pending.targetRepo,
+            task: null,
+            steps: [],
+          },
+        ]
+      : []),
+  ];
+  const inConversation = selectedId !== null || showPending;
 
   const composer = (
     <Composer
@@ -252,8 +317,10 @@ function Workspace({ email }: { email: string }) {
       onRepoChange={setTargetRepo}
       ghConnected={ghConnected}
       onOpenConnectors={openConnectors}
-      submitting={submitting}
-      placeholder={conversation ? 'Envía una nueva tarea a Atlas' : 'Pídele algo a Atlas'}
+      submitting={submitting || convoBusy}
+      placeholder={
+        convoBusy ? 'Atlas está respondiendo…' : inConversation ? 'Responde a Atlas' : 'Pídele algo a Atlas'
+      }
       autoFocus
     />
   );
@@ -269,6 +336,7 @@ function Workspace({ email }: { email: string }) {
         loading={tasksLoading}
         selectedId={selectedId}
         onSelect={navigate}
+        onRequestDelete={setDeleteTarget}
         onNew={() => navigate(null)}
         email={email}
         ghConnected={ghConnected}
@@ -319,18 +387,11 @@ function Workspace({ email }: { email: string }) {
           </div>
         )}
 
-        {conversation ? (
+        {inConversation ? (
           <>
             <main className="flex-1 min-h-0 overflow-y-auto">
-              {conversation.prompt ? (
-                <ChatView
-                  key={selectedId ?? 'pending'}
-                  prompt={conversation.prompt}
-                  mode={conversation.mode}
-                  targetRepo={conversation.targetRepo}
-                  task={conversation.task}
-                  steps={conversation.steps}
-                />
+              {chatTurns.length > 0 ? (
+                <ChatView key={selectedId ?? 'new'} turns={chatTurns} />
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <LoaderCircle className="w-6 h-6 animate-spin text-zinc-500" />
@@ -373,6 +434,16 @@ function Workspace({ email }: { email: string }) {
         notice={connectorNotice}
         onNotice={setConnectorNotice}
         completing={oauthCompleting}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="¿Eliminar chat?"
+        message={`Se eliminará "${(deleteTarget?.prompt ?? '').slice(0, 80)}" con todos sus mensajes. Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        busy={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

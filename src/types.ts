@@ -36,6 +36,12 @@ export interface AgentStep {
   tool_output: string | null;
 }
 
+/** Un turno de la conversación: el mensaje del usuario (task.prompt) y la respuesta del agente. */
+export interface ConversationTurn {
+  task: TaskDetail;
+  steps: AgentStep[];
+}
+
 export interface ConnectorsResponse {
   github: {
     connected: boolean;

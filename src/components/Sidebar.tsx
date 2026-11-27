@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { LogOut, Menu, Plug, Search, SquarePen, X } from 'lucide-react';
+import { LogOut, Menu, Plug, Search, SquarePen, Trash2, X } from 'lucide-react';
 import { groupTasksByDate } from '../lib/format';
 import { usePopover } from '../hooks/usePopover';
 import type { TaskSummary } from '../types';
@@ -13,6 +13,7 @@ interface Props {
   loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onRequestDelete: (task: TaskSummary) => void;
   onNew: () => void;
   email: string;
   ghConnected: boolean;
@@ -47,6 +48,7 @@ export function Sidebar({
   loading,
   selectedId,
   onSelect,
+  onRequestDelete,
   onNew,
   email,
   ghConnected,
@@ -93,10 +95,10 @@ export function Sidebar({
             className={`h-10 rounded-full flex items-center gap-3 text-sm text-zinc-200 hover:bg-white/[0.08] transition ${
               full ? 'w-full px-2.5' : 'w-10 justify-center'
             }`}
-            title="Nueva tarea"
+            title="Nuevo chat"
           >
             <SquarePen className="w-5 h-5 shrink-0" />
-            {full && <span>Nueva tarea</span>}
+            {full && <span>Nuevo chat</span>}
           </button>
         </div>
 
@@ -108,7 +110,7 @@ export function Sidebar({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar tareas"
+                  placeholder="Buscar chats"
                   className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-zinc-500"
                 />
               </div>
@@ -123,26 +125,38 @@ export function Sidebar({
                 </div>
               ) : groups.length === 0 ? (
                 <p className="px-3 pt-4 text-xs text-zinc-500">
-                  {query ? 'No hay tareas que coincidan.' : 'Tus tareas aparecerán aquí.'}
+                  {query ? 'No hay chats que coincidan.' : 'Tus chats aparecerán aquí.'}
                 </p>
               ) : (
                 groups.map((group) => (
                   <div key={group.label} className="mt-3">
                     <div className="px-3 pb-1.5 text-xs font-medium text-zinc-500">{group.label}</div>
                     {group.items.map((t) => (
-                      <button
+                      <div
                         key={t.id}
-                        onClick={() => onSelect(t.id)}
-                        title={t.prompt}
-                        className={`w-full h-9 px-3 rounded-full flex items-center gap-2 text-left text-sm transition ${
+                        className={`group relative w-full h-9 rounded-full flex items-center text-sm transition ${
                           selectedId === t.id
                             ? 'bg-[#1f3760] text-[#d3e3fd]'
                             : 'text-zinc-300 hover:bg-white/[0.06]'
                         }`}
                       >
-                        <span className="flex-1 truncate">{t.prompt}</span>
-                        <StatusDot status={t.status} />
-                      </button>
+                        <button
+                          onClick={() => onSelect(t.id)}
+                          title={t.prompt}
+                          className="flex-1 min-w-0 h-full pl-3 pr-1 flex items-center gap-2 text-left"
+                        >
+                          <span className="flex-1 truncate">{t.prompt}</span>
+                          <StatusDot status={t.status} />
+                        </button>
+                        <button
+                          onClick={() => onRequestDelete(t)}
+                          aria-label="Eliminar chat"
+                          title="Eliminar chat"
+                          className="w-8 h-8 mr-0.5 rounded-full shrink-0 flex items-center justify-center text-zinc-400 hover:text-red-300 hover:bg-white/[0.08] opacity-0 group-hover:opacity-100 focus:opacity-100 max-lg:opacity-100 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ))

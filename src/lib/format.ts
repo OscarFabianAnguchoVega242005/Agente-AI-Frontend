@@ -21,7 +21,7 @@ export function groupTasksByDate(tasks: TaskSummary[]): Array<{ label: string; i
   ];
 
   for (const task of tasks) {
-    const time = new Date(task.created_at).getTime();
+    const time = new Date(task.updated_at ?? task.created_at).getTime();
     const bucket = buckets.find((b) => time >= b.from) ?? buckets[buckets.length - 1]!;
     bucket.items.push(task);
   }
