@@ -6,6 +6,7 @@ import {
   FolderTree,
   GitBranch,
   GitPullRequest,
+  History,
   Hourglass,
   KeyRound,
   List,
@@ -99,6 +100,19 @@ export function describeStep(step: AgentStep): StepView {
             ? `Escaneó ${scanned ?? ''} archivos: sin credenciales expuestas`
             : `Escaneó ${scanned ?? ''} archivos: ${count} posible${count === 1 ? '' : 's'} credencial${count === 1 ? '' : 'es'} expuesta${count === 1 ? '' : 's'}`;
       return { icon: KeyRound, label: label.replace(/\s+/g, ' '), failed: failed || (count ?? 0) > 0 };
+    }
+    case 'scan_git_history': {
+      const out = parseJson(step.tool_output);
+      const count = out && typeof out.findings_count === 'number' ? out.findings_count : null;
+      const commits = out && typeof out.commits_scanned === 'number' ? out.commits_scanned : null;
+      const onlyHistory = out && typeof out.only_in_history === 'number' ? out.only_in_history : 0;
+      const label =
+        count === null
+          ? 'Revisó el historial de Git en busca de credenciales'
+          : count === 0
+            ? `Revisó ${commits ?? ''} commits del historial: sin credenciales`
+            : `Revisó ${commits ?? ''} commits: ${count} credencial${count === 1 ? '' : 'es'} en el historial${onlyHistory ? ` (${onlyHistory} ya borrada${onlyHistory === 1 ? '' : 's'} del código)` : ''}`;
+      return { icon: History, label: label.replace(/\s+/g, ' '), failed: failed || (count ?? 0) > 0 };
     }
     case 'run_checks': {
       const out = parseJson(step.tool_output);
