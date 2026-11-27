@@ -1,6 +1,7 @@
 import {
   Brain,
   FileText,
+  Files,
   FolderTree,
   GitBranch,
   Hourglass,
@@ -45,6 +46,15 @@ export function describeStep(step: AgentStep): StepView {
       return { icon: FolderTree, label: `Exploró la estructura de ${str(input.repo) || 'el repositorio'}`, failed };
     case 'read_file':
       return { icon: FileText, label: `Leyó ${str(input.path) || 'un archivo'}`, failed };
+    case 'read_files': {
+      const paths = Array.isArray(input.paths) ? input.paths.map(String) : [];
+      const preview = paths.slice(0, 2).join(', ');
+      const label =
+        paths.length === 0
+          ? 'Leyó varios archivos'
+          : `Leyó ${paths.length} archivo${paths.length === 1 ? '' : 's'}: ${preview}${paths.length > 2 ? '…' : ''}`;
+      return { icon: Files, label, failed };
+    }
     case 'commit_files_to_branch': {
       const files = Array.isArray(input.files) ? input.files.length : 0;
       const branch = str(input.newBranch);
