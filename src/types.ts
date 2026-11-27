@@ -29,6 +29,8 @@ export interface TaskSummary {
   status: TaskStatus;
   created_at: string;
   updated_at?: string;
+  /** Título del chat (generado por Atlas o puesto por el usuario) */
+  title?: string | null;
 }
 
 export interface TaskDetail extends TaskSummary {

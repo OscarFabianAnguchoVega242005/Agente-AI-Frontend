@@ -7,6 +7,17 @@ export function displayName(email: string | undefined): string {
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
+/** Nombre visible del chat: el título (generado o puesto por el usuario) o el primer mensaje limpio. */
+export function chatTitle(task: Pick<TaskSummary, 'title' | 'prompt'>): string {
+  if (task.title && task.title.trim()) return task.title.trim();
+  const clean = task.prompt
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/^[\s"'“”«»¿¡`*#>-]+|[\s"'“”«»?!.,:;`*]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : 'Nuevo chat';
+}
+
 const DAY = 86_400_000;
 
 export function groupTasksByDate(tasks: TaskSummary[]): Array<{ label: string; items: TaskSummary[] }> {

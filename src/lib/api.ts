@@ -63,6 +63,12 @@ export const api = {
 
   getConversation: (id: string) => request<{ turns: ConversationTurn[] }>(`/api/conversations/${id}`),
 
+  renameConversation: (id: string, title: string) =>
+    request<{ id: string; title: string }>(`/api/conversations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
+
   deleteConversation: (id: string) =>
     request<{ deleted: true }>(`/api/conversations/${id}`, { method: 'DELETE' }),
 

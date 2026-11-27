@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { LoaderCircle, Menu, Plug, RefreshCw, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { api } from './lib/api';
-import { displayName } from './lib/format';
+import { chatTitle, displayName } from './lib/format';
 import { AuthScreen } from './components/AuthScreen';
 import { AtlasLogo } from './components/AtlasLogo';
 import { Sidebar } from './components/Sidebar';
@@ -121,6 +121,17 @@ function Workspace({ email }: { email: string }) {
     }
   }, []);
 
+  /** Actualiza solo los títulos de los chats (Atlas los genera tras cada respuesta). */
+  const refreshTitles = useCallback(async () => {
+    try {
+      const data = await api.listTasks();
+      const titles = new Map((data.tasks ?? []).map((t) => [t.id, t.title ?? null]));
+      setTasks((prev) => prev.map((t) => (titles.has(t.id) ? { ...t, title: titles.get(t.id) ?? t.title } : t)));
+    } catch {
+      // no es crítico
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setError(null);
     const results = await Promise.allSettled([loadConnectors(), loadTasks()]);
@@ -185,6 +196,8 @@ function Workspace({ email }: { email: string }) {
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let sawBusy = false;
+    const titleTimers: Array<ReturnType<typeof setTimeout>> = [];
 
     const tick = async () => {
       try {
@@ -198,7 +211,12 @@ function Workspace({ email }: { email: string }) {
         setTasks((prev) =>
           prev.map((t) => (t.id === selectedId ? { ...t, status: busy ? 'running' : (lastStatus ?? t.status) } : t))
         );
-        if (!busy) return;
+        if (busy) sawBusy = true;
+        if (!busy) {
+          // El título se genera justo después de la respuesta: se consulta un par de veces
+          if (sawBusy) titleTimers.push(setTimeout(() => void refreshTitles(), 2500), setTimeout(() => void refreshTitles(), 7000));
+          return;
+        }
       } catch (err) {
         if (cancelled) return;
         if ((err as { status?: number }).status === 404) {
@@ -214,8 +232,9 @@ function Workspace({ email }: { email: string }) {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      titleTimers.forEach(clearTimeout);
     };
-  }, [selectedId, pollKey, navigate]);
+  }, [selectedId, pollKey, navigate, refreshTitles]);
 
   const currentTurns = convo && convo.id === selectedId ? convo.turns : [];
   const showPending = pending !== null && pending.conversationId === selectedId;
@@ -273,6 +292,17 @@ function Workspace({ email }: { email: string }) {
     }
   };
 
+  const renameChat = async (id: string, title: string) => {
+    const previous = tasks.find((t) => t.id === id)?.title ?? null;
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+    try {
+      await api.renameConversation(id, title);
+    } catch (err) {
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, title: previous } : t)));
+      setError((err as Error).message);
+    }
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -318,6 +348,7 @@ function Workspace({ email }: { email: string }) {
       : []),
   ];
   const inConversation = selectedId !== null || showPending;
+  const currentChat = selectedId ? tasks.find((t) => t.id === selectedId) : undefined;
 
   const composer = (
     <Composer
@@ -352,6 +383,7 @@ function Workspace({ email }: { email: string }) {
         selectedId={selectedId}
         onSelect={openChat}
         onRequestDelete={setDeleteTarget}
+        onRename={(id, title) => void renameChat(id, title)}
         onNew={() => openChat(null)}
         email={email}
         ghConnected={ghConnected}
@@ -374,6 +406,12 @@ function Workspace({ email }: { email: string }) {
           >
             <span className="text-xl font-medium tracking-tight text-zinc-100">Atlas</span>
           </button>
+          {currentChat && (
+            <span className="min-w-0 truncate text-sm text-zinc-400 max-sm:hidden" title={chatTitle(currentChat)}>
+              <span className="text-zinc-600 mr-2">/</span>
+              {chatTitle(currentChat)}
+            </span>
+          )}
 
           {!ghConnected && !tasksLoading && (
             <button
@@ -454,7 +492,7 @@ function Workspace({ email }: { email: string }) {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="¿Eliminar chat?"
-        message={`Se eliminará "${(deleteTarget?.prompt ?? '').slice(0, 80)}" con todos sus mensajes. Esta acción no se puede deshacer.`}
+        message={`Se eliminará "${deleteTarget ? chatTitle(deleteTarget).slice(0, 80) : ''}" con todos sus mensajes. Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar"
         busy={deleting}
         onConfirm={() => void confirmDelete()}

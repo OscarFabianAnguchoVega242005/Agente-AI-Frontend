@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { LogOut, Menu, Plug, Search, SquarePen, Trash2, X } from 'lucide-react';
-import { groupTasksByDate } from '../lib/format';
+import { LogOut, Menu, Pencil, Plug, Search, SquarePen, Trash2, X } from 'lucide-react';
+import { chatTitle, groupTasksByDate } from '../lib/format';
 import { usePopover } from '../hooks/usePopover';
 import type { TaskSummary } from '../types';
 
@@ -14,6 +14,7 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onRequestDelete: (task: TaskSummary) => void;
+  onRename: (id: string, title: string) => void;
   onNew: () => void;
   email: string;
   ghConnected: boolean;
@@ -39,6 +40,91 @@ function StatusDot({ status }: { status: TaskSummary['status'] }) {
   return null;
 }
 
+function ChatItem({
+  task,
+  selected,
+  onSelect,
+  onRename,
+  onRequestDelete,
+}: {
+  task: TaskSummary;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  onRename: (id: string, title: string) => void;
+  onRequestDelete: (task: TaskSummary) => void;
+}) {
+  const label = chatTitle(task);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(label);
+
+  const startEditing = () => {
+    setValue(label);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    const next = value.trim().slice(0, 80);
+    setEditing(false);
+    if (next && next !== label) onRename(task.id, next);
+  };
+
+  const iconBtn =
+    'w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-zinc-400 hover:bg-white/[0.08] opacity-0 group-hover:opacity-100 focus:opacity-100 max-lg:opacity-100 transition';
+
+  return (
+    <div
+      className={`group relative w-full h-9 rounded-full flex items-center text-sm transition ${
+        selected ? 'bg-[#1f3760] text-[#d3e3fd]' : 'text-zinc-300 hover:bg-white/[0.06]'
+      }`}
+    >
+      {editing ? (
+        <input
+          autoFocus
+          value={value}
+          maxLength={80}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          aria-label="Nuevo nombre del chat"
+          className="flex-1 min-w-0 h-7 mx-1.5 px-2.5 rounded-full bg-black/30 border border-[#8ab4f8]/50 text-zinc-100 outline-none"
+        />
+      ) : (
+        <>
+          <button
+            onClick={() => onSelect(task.id)}
+            onDoubleClick={startEditing}
+            title={label}
+            className="flex-1 min-w-0 h-full pl-3 pr-1 flex items-center gap-2 text-left"
+          >
+            <span className="flex-1 truncate">{label}</span>
+            <StatusDot status={task.status} />
+          </button>
+          <button
+            onClick={startEditing}
+            aria-label="Cambiar nombre"
+            title="Cambiar nombre"
+            className={`${iconBtn} hover:text-zinc-100`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => onRequestDelete(task)}
+            aria-label="Eliminar chat"
+            title="Eliminar chat"
+            className={`${iconBtn} mr-0.5 hover:text-red-300`}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({
   expanded,
   onToggleExpanded,
@@ -49,6 +135,7 @@ export function Sidebar({
   selectedId,
   onSelect,
   onRequestDelete,
+  onRename,
   onNew,
   email,
   ghConnected,
@@ -61,7 +148,7 @@ export function Sidebar({
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q ? tasks.filter((t) => t.prompt.toLowerCase().includes(q)) : tasks;
+    const list = q ? tasks.filter((t) => `${t.title ?? ""} ${t.prompt}`.toLowerCase().includes(q)) : tasks;
     return groupTasksByDate(list);
   }, [tasks, query]);
 
@@ -132,31 +219,14 @@ export function Sidebar({
                   <div key={group.label} className="mt-3">
                     <div className="px-3 pb-1.5 text-xs font-medium text-zinc-500">{group.label}</div>
                     {group.items.map((t) => (
-                      <div
+                      <ChatItem
                         key={t.id}
-                        className={`group relative w-full h-9 rounded-full flex items-center text-sm transition ${
-                          selectedId === t.id
-                            ? 'bg-[#1f3760] text-[#d3e3fd]'
-                            : 'text-zinc-300 hover:bg-white/[0.06]'
-                        }`}
-                      >
-                        <button
-                          onClick={() => onSelect(t.id)}
-                          title={t.prompt}
-                          className="flex-1 min-w-0 h-full pl-3 pr-1 flex items-center gap-2 text-left"
-                        >
-                          <span className="flex-1 truncate">{t.prompt}</span>
-                          <StatusDot status={t.status} />
-                        </button>
-                        <button
-                          onClick={() => onRequestDelete(t)}
-                          aria-label="Eliminar chat"
-                          title="Eliminar chat"
-                          className="w-8 h-8 mr-0.5 rounded-full shrink-0 flex items-center justify-center text-zinc-400 hover:text-red-300 hover:bg-white/[0.08] opacity-0 group-hover:opacity-100 focus:opacity-100 max-lg:opacity-100 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                        task={t}
+                        selected={selectedId === t.id}
+                        onSelect={onSelect}
+                        onRename={onRename}
+                        onRequestDelete={onRequestDelete}
+                      />
                     ))}
                   </div>
                 ))
