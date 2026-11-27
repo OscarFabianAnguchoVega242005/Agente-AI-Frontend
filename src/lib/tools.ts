@@ -2,6 +2,7 @@ import {
   Brain,
   FileText,
   Files,
+  FlaskConical,
   FolderTree,
   GitBranch,
   GitPullRequest,
@@ -84,6 +85,29 @@ export function describeStep(step: AgentStep): StepView {
                   text: 'Ver rama',
                 }
               : undefined,
+      };
+    }
+    case 'run_checks': {
+      const out = parseJson(step.tool_output);
+      const conclusion = out ? str(out.conclusion) : '';
+      const url = out ? str(out.run_url) : '';
+      const commands = Array.isArray(input.commands) ? input.commands.map(String) : [];
+      const what = commands.length ? `: ${commands.slice(0, 3).join(' · ')}${commands.length > 3 ? '…' : ''}` : '';
+      const label =
+        conclusion === 'success'
+          ? `Pruebas superadas en GitHub Actions${what}`
+          : conclusion === 'failure'
+            ? `Pruebas fallidas en GitHub Actions${what}`
+            : conclusion === 'timeout'
+              ? 'Las pruebas en GitHub Actions siguen en curso'
+              : conclusion === 'not_started'
+                ? 'GitHub Actions no arrancó las pruebas'
+                : `Ejecutó pruebas en GitHub Actions${what}`;
+      return {
+        icon: FlaskConical,
+        label,
+        failed: failed || (conclusion !== '' && conclusion !== 'success'),
+        link: url.startsWith('https://github.com/') ? { href: url, text: 'Ver ejecución' } : undefined,
       };
     }
     case 'create_pull_request': {
