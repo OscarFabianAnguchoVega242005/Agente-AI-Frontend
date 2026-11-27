@@ -43,6 +43,65 @@ export function extractFiles(markdown: string): CodeFile[] {
   return [...files.values()];
 }
 
+// ───────────────────────────── Vista previa ─────────────────────────────
+
+export function isHtmlFile(f: CodeFile): boolean {
+  return /\.html?$/i.test(f.path) || f.language.toLowerCase() === 'html';
+}
+
+function dirname(path: string): string {
+  const i = path.lastIndexOf('/');
+  return i === -1 ? '' : path.slice(0, i + 1);
+}
+
+/** Resuelve una ruta relativa (href/src) respecto al HTML de entrada. */
+function resolveRelative(fromHtml: string, ref: string): string | null {
+  if (/^(?:[a-z]+:)?\/\//i.test(ref) || ref.startsWith('data:') || ref.startsWith('#')) return null; // externa
+  const clean = ref.split(/[?#]/)[0] ?? '';
+  const parts = (clean.startsWith('/') ? clean.slice(1) : dirname(fromHtml) + clean).split('/');
+  const out: string[] = [];
+  for (const p of parts) {
+    if (!p || p === '.') continue;
+    if (p === '..') out.pop();
+    else out.push(p);
+  }
+  return out.join('/');
+}
+
+/**
+ * Construye un documento HTML autocontenido para la vista previa:
+ * incrusta los CSS y JS locales enlazados desde la página de entrada.
+ */
+export function buildPreviewDocument(files: CodeFile[], entryPath: string): string {
+  const entry = files.find((f) => f.path === entryPath);
+  if (!entry) return '';
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  let html = entry.content;
+
+  // <link rel="stylesheet" href="styles.css"> → <style>…</style>
+  html = html.replace(/<link\b[^>]*>/gi, (tag) => {
+    if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) return tag;
+    const href = /href\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+    const file = href ? byPath.get(resolveRelative(entry.path, href) ?? '') : undefined;
+    return file ? `<style>\n${file.content.replace(/<\/style/gi, '<\\/style')}\n</style>` : tag;
+  });
+
+  // <script src="app.js"></script> → <script>…</script> (conserva type="module", etc.)
+  html = html.replace(
+    /<script\b([^>]*?)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi,
+    (tag, before: string, src: string, after: string) => {
+      const file = byPath.get(resolveRelative(entry.path, src) ?? '');
+      return file ? `<script${before}${after}>\n${file.content.replace(/<\/script/gi, '<\\/script')}\n</script>` : tag;
+    }
+  );
+
+  // Fragmentos sin <html>: se envuelven en un documento mínimo
+  if (!/<html[\s>]/i.test(html) && !/<body[\s>]/i.test(html)) {
+    html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${html}</body></html>`;
+  }
+  return html;
+}
+
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

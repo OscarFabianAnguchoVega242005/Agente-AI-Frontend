@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, FolderDown, FolderGit2, TriangleAlert } from 'lucide-react';
-import { downloadZip, extractFiles } from '../lib/files';
+import { Check, Copy, Eye, FolderDown, FolderGit2, TriangleAlert } from 'lucide-react';
+import { downloadZip, extractFiles, isHtmlFile, type CodeFile } from '../lib/files';
 import { AtlasLogo } from './AtlasLogo';
 import { Markdown } from './Markdown';
 import { ToolTrace } from './ToolTrace';
@@ -35,28 +35,27 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-/** "Descargar todo (.zip)" cuando la respuesta trae dos o más archivos con nombre. */
-function DownloadAllButton({ markdown }: { markdown: string }) {
-  const files = useMemo(() => extractFiles(markdown), [markdown]);
-  if (files.length < 2) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => downloadZip(files)}
-      title={files.map((f) => f.path).join('\n')}
-      className="h-9 px-3 rounded-full flex items-center gap-1.5 text-sm text-zinc-300 hover:text-zinc-100 hover:bg-white/[0.06] transition"
-    >
-      <FolderDown className="w-4 h-4" />
-      Descargar todo ({files.length} archivos, .zip)
-    </button>
-  );
-}
+const actionBtn =
+  'h-9 px-3 rounded-full flex items-center gap-1.5 text-sm text-zinc-300 hover:text-zinc-100 hover:bg-white/[0.06] transition';
 
-function Turn({ turn, showMeta }: { turn: ChatTurn; showMeta: boolean }) {
+function Turn({
+  turn,
+  showMeta,
+  onPreview,
+}: {
+  turn: ChatTurn;
+  showMeta: boolean;
+  onPreview?: (files: CodeFile[]) => void;
+}) {
   const { prompt, mode, targetRepo, task, steps } = turn;
   const running = !task || !isFinished(task.status);
   const meta = modeMeta(mode);
   const ModeIcon = meta.icon;
+  const files = useMemo(
+    () => (task?.status === 'completed' ? extractFiles(task.final_response ?? '') : []),
+    [task?.status, task?.final_response]
+  );
+  const hasHtml = files.some(isHtmlFile);
 
   return (
     <div className="space-y-8">
@@ -98,9 +97,25 @@ function Turn({ turn, showMeta }: { turn: ChatTurn; showMeta: boolean }) {
           {task?.status === 'completed' && (
             <>
               <Markdown>{task.final_response ?? 'Tarea completada sin salida de texto.'}</Markdown>
-              <div className="mt-3 -ml-2 flex items-center gap-1">
+              <div className="mt-3 -ml-2 flex flex-wrap items-center gap-1">
                 <CopyButton text={task.final_response ?? ''} />
-                <DownloadAllButton markdown={task.final_response ?? ''} />
+                {hasHtml && onPreview && (
+                  <button type="button" onClick={() => onPreview(files)} className={actionBtn}>
+                    <Eye className="w-4 h-4" />
+                    Vista previa
+                  </button>
+                )}
+                {files.length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => downloadZip(files)}
+                    title={files.map((f) => f.path).join('\n')}
+                    className={actionBtn}
+                  >
+                    <FolderDown className="w-4 h-4" />
+                    Descargar todo ({files.length} archivos, .zip)
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -120,7 +135,13 @@ function Turn({ turn, showMeta }: { turn: ChatTurn; showMeta: boolean }) {
   );
 }
 
-export function ChatView({ turns }: { turns: ChatTurn[] }) {
+export function ChatView({
+  turns,
+  onPreview,
+}: {
+  turns: ChatTurn[];
+  onPreview?: (files: CodeFile[]) => void;
+}) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const last = turns[turns.length - 1];
 
@@ -134,7 +155,7 @@ export function ChatView({ turns }: { turns: ChatTurn[] }) {
         const prev = turns[i - 1];
         // Solo muestra modo/repo cuando cambian respecto al turno anterior
         const showMeta = !prev || prev.mode !== turn.mode || prev.targetRepo !== turn.targetRepo;
-        return <Turn key={turn.key} turn={turn} showMeta={showMeta} />;
+        return <Turn key={turn.key} turn={turn} showMeta={showMeta} onPreview={onPreview} />;
       })}
       <div ref={bottomRef} />
     </div>

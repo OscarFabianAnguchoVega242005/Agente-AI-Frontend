@@ -12,6 +12,8 @@ import { ChatView, type ChatTurn } from './components/ChatView';
 import { Greeting, Suggestions } from './components/Welcome';
 import { ConnectorsModal, type Notice } from './components/ConnectorsModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { PreviewPanel, type PreviewState } from './components/PreviewPanel';
+import { extractFiles, isHtmlFile, type CodeFile } from './lib/files';
 import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
 import {
   isFinished,
@@ -94,6 +96,11 @@ function Workspace({ email }: { email: string }) {
   // Eliminar chat
   const [deleteTarget, setDeleteTarget] = useState<TaskSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Vista previa de lo que construye Atlas
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const seenRunning = useRef(new Set<string>());
+  const autoOpened = useRef(new Set<string>());
 
   // UI
   const [error, setError] = useState<string | null>(null);
@@ -181,6 +188,7 @@ function Workspace({ email }: { email: string }) {
   const openChat = useCallback(
     (id: string | null) => {
       setTargetRepo('');
+      setPreview(null);
       navigate(id);
     },
     [navigate]
@@ -350,6 +358,28 @@ function Workspace({ email }: { email: string }) {
   const inConversation = selectedId !== null || showPending;
   const currentChat = selectedId ? tasks.find((t) => t.id === selectedId) : undefined;
 
+  const openPreview = useCallback((files: CodeFile[]) => {
+    const html = files.filter(isHtmlFile);
+    const entry = html.find((f) => /(^|\/)index\.html?$/i.test(f.path)) ?? html[0];
+    if (entry) setPreview({ files, entry: entry.path });
+  }, []);
+
+  // Abre la vista previa sola cuando una respuesta recién terminada trae una página HTML
+  // (no al abrir chats antiguos: solo respuestas que se vieron "en curso" en esta sesión)
+  useEffect(() => {
+    if (pending?.taskId) seenRunning.current.add(pending.taskId);
+    for (const t of currentTurns) if (!isFinished(t.task.status)) seenRunning.current.add(t.task.id);
+
+    const last = currentTurns[currentTurns.length - 1];
+    if (!last || last.task.status !== 'completed') return;
+    const id = last.task.id;
+    if (!seenRunning.current.has(id) || autoOpened.current.has(id)) return;
+    autoOpened.current.add(id);
+
+    const files = extractFiles(last.task.final_response ?? '');
+    if (files.some(isHtmlFile)) openPreview(files);
+  }, [currentTurns, pending, openPreview]);
+
   const composer = (
     <Composer
       value={draft}
@@ -444,7 +474,7 @@ function Workspace({ email }: { email: string }) {
           <>
             <main className="flex-1 min-h-0 overflow-y-auto">
               {chatTurns.length > 0 ? (
-                <ChatView key={selectedId ?? 'new'} turns={chatTurns} />
+                <ChatView key={selectedId ?? 'new'} turns={chatTurns} onPreview={openPreview} />
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <LoaderCircle className="w-6 h-6 animate-spin text-zinc-500" />
@@ -475,6 +505,14 @@ function Workspace({ email }: { email: string }) {
           </main>
         )}
       </div>
+
+      {preview && (
+        <PreviewPanel
+          preview={preview}
+          onClose={() => setPreview(null)}
+          onChangeEntry={(entry) => setPreview((p) => (p ? { ...p, entry } : p))}
+        />
+      )}
 
       <ConnectorsModal
         open={connectorsOpen}
