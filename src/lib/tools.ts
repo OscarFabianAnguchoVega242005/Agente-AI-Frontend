@@ -135,7 +135,11 @@ export function describeStep(step: AgentStep): StepView {
       };
     }
     case 'model_fallback':
-      return { icon: Zap, label: 'Cambió al modelo rápido (el modelo Pro no está disponible)', failed: false };
+      return {
+        icon: Zap,
+        label: str(input.to) ? `Cambió al modelo ${str(input.to)} (${str(input.from) || 'el anterior'} sin cuota disponible)` : 'Cambió de modelo (sin cuota disponible)',
+        failed: false,
+      };
     case 'rate_limit_wait': {
       const seconds = typeof input.seconds === 'number' ? input.seconds : 0;
       return { icon: Hourglass, label: `Esperó ${seconds} s por el límite del plan gratuito`, failed: false };
