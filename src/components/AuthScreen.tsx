@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Eye, EyeOff, LoaderCircle, TriangleAlert } from 'lucide-react';
 import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../lib/supabase';
+import { GOOGLE_CLIENT_ID, createNonce, loadGoogleIdentity, type GoogleIdentity } from '../lib/googleIdentity';
 import { AtlasLogo } from './AtlasLogo';
 
 /** Logo de Google para el botón de acceso (según las pautas de marca de "Acceder con Google"). */
@@ -110,6 +111,14 @@ export function AuthScreen() {
   const [notice, setNotice] = useState<string | null>(oauthErrorFromUrl);
   const [showEmail, setShowEmail] = useState(false);
 
+  // Botón oficial de Google (Google Identity Services)
+  const [gis, setGis] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [signingIn, setSigningIn] = useState(false);
+  const gisRef = useRef<HTMLDivElement>(null);
+  const googleRef = useRef<GoogleIdentity | null>(null);
+  const nonceRef = useRef('');
+  const finishRef = useRef<(credential: string) => void>(() => undefined);
+
   useEffect(() => {
     let cancelled = false;
     fetch(`${SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: SUPABASE_ANON_KEY } })
@@ -129,6 +138,91 @@ export function AuthScreen() {
   // quedarse fuera; si no se pudo comprobar, el correo queda detrás de un enlace.
   const googleEnabled = providers !== null && (providers === 'error' || providers.google);
   const googlePending = providers !== null && providers !== 'error' && !providers.google;
+  // Con Google activado se usa su botón oficial; si no carga (bloqueadores, sin red), el acceso por redirección
+  const useOfficialButton = providers !== null && providers !== 'error' && providers.google && gis !== 'failed';
+
+  /** Dibuja el botón oficial al ancho disponible (Google lo pide en píxeles, de 200 a 400). */
+  const drawButton = useCallback(() => {
+    const container = gisRef.current;
+    const google = googleRef.current;
+    if (!container || !google) return;
+    const width = Math.round(Math.min(400, Math.max(200, container.clientWidth)));
+    container.replaceChildren();
+    google.renderButton(container, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'pill',
+      logo_alignment: 'center',
+      width,
+      locale: 'es',
+    });
+  }, []);
+
+  /** Prepara un intento de acceso: nonce nuevo y botón listo. */
+  const setupGoogle = useCallback(async () => {
+    const google = await loadGoogleIdentity();
+    const { raw, hashed } = await createNonce();
+    nonceRef.current = raw;
+    googleRef.current = google;
+    google.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      nonce: hashed,
+      ux_mode: 'popup',
+      context: 'signin',
+      itp_support: true,
+      callback: (response) => finishRef.current(response.credential),
+    });
+    drawButton();
+  }, [drawButton]);
+
+  // Google devuelve el token de identidad a la página y Supabase crea la sesión con él
+  finishRef.current = (credential: string) => {
+    setNotice(null);
+    setSigningIn(true);
+    void supabase.auth
+      .signInWithIdToken({ provider: 'google', token: credential, nonce: nonceRef.current })
+      .then(({ error }) => {
+        if (!error) return; // App detecta la sesión y abre Atlas
+        setSigningIn(false);
+        setNotice(
+          /signups? not allowed|signup.*disabled/i.test(error.message)
+            ? 'Esta cuenta de Google no tiene acceso a Atlas.'
+            : `No se pudo entrar con Google: ${error.message}`
+        );
+        void setupGoogle().catch(() => setGis('failed')); // el nonce es de un solo uso
+      });
+  };
+
+  useEffect(() => {
+    if (!(providers !== null && providers !== 'error' && providers.google)) return;
+    let cancelled = false;
+    setupGoogle()
+      .then(() => {
+        if (!cancelled) setGis('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setGis('failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [providers, setupGoogle]);
+
+  // Si cambia el ancho (girar el móvil, redimensionar), el botón se vuelve a dibujar a su medida
+  useEffect(() => {
+    const container = gisRef.current;
+    if (gis !== 'ready' || !container || typeof ResizeObserver === 'undefined') return;
+    let last = container.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (Math.abs(container.clientWidth - last) < 16) return;
+      last = container.clientWidth;
+      drawButton();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [gis, drawButton]);
 
   const continueWithGoogle = async () => {
     setNotice(null);
@@ -174,19 +268,35 @@ export function AuthScreen() {
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => void continueWithGoogle()}
-            disabled={!googleEnabled || redirecting}
-            className="w-full h-12 rounded-full bg-white hover:bg-zinc-100 text-[#1f1f1f] font-medium text-[15px] flex items-center justify-center gap-3 disabled:opacity-60 transition active:scale-[0.99] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
-          >
-            {providers === null || redirecting ? (
-              <LoaderCircle className="w-5 h-5 animate-spin text-zinc-500" />
-            ) : (
-              <GoogleLogo />
-            )}
-            Continuar con Google
-          </button>
+          {useOfficialButton ? (
+            <div className="relative h-10">
+              {/* Aquí Google dibuja su botón oficial; mientras carga o se valida, se ve un marcador igual */}
+              <div ref={gisRef} className={`w-full flex justify-center ${gis === 'ready' && !signingIn ? '' : 'invisible'}`} />
+              {(gis !== 'ready' || signingIn) && (
+                <div
+                  aria-live="polite"
+                  className="absolute inset-0 rounded-full bg-white text-[#1f1f1f] text-sm font-medium flex items-center justify-center gap-3 opacity-80"
+                >
+                  <LoaderCircle className="w-4 h-4 animate-spin text-zinc-500" />
+                  {signingIn ? 'Entrando…' : 'Continuar con Google'}
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void continueWithGoogle()}
+              disabled={!googleEnabled || redirecting}
+              className="w-full h-12 rounded-full bg-white hover:bg-zinc-100 text-[#1f1f1f] font-medium text-[15px] flex items-center justify-center gap-3 disabled:opacity-60 transition active:scale-[0.99] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+            >
+              {providers === null || redirecting ? (
+                <LoaderCircle className="w-5 h-5 animate-spin text-zinc-500" />
+              ) : (
+                <GoogleLogo />
+              )}
+              Continuar con Google
+            </button>
+          )}
 
           {googlePending && (
             <div className="mt-5 space-y-3">
