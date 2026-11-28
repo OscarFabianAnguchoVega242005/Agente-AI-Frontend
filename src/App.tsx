@@ -123,6 +123,12 @@ function Workspace({ email }: { email: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const compactWelcome = useMediaQuery(COMPACT_WELCOME);
   const coarsePointer = useMediaQuery(COARSE_POINTER);
+  const desktopLayout = useMediaQuery('(min-width: 1024px)');
+
+  // Si la ventana se ensancha hasta escritorio con el menú móvil abierto, se cierra (allí el menú es fijo)
+  useEffect(() => {
+    if (desktopLayout) setMobileOpen(false);
+  }, [desktopLayout]);
 
   const loadConnectors = useCallback(async () => {
     const data = await api.getConnectors();

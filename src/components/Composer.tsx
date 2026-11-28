@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ArrowUp, Check, ChevronDown, FolderGit2, LoaderCircle, Lock, Plug, Search } from 'lucide-react';
 import { MODE_OPTIONS, modeMeta } from '../lib/modes';
 import { usePopover } from '../hooks/usePopover';
@@ -232,12 +232,34 @@ export function Composer({
   const canSend = value.trim().length >= 1 && value.length <= MAX_CHARS && !submitting;
 
   // Crece con el texto; el tope real lo marca max-height (más bajo en pantallas cortas)
-  useEffect(() => {
+  const fitHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    // Vacío: altura natural de una línea (medir el placeholder daría alturas enormes si el cuadro es estrecho)
+    if (!el.value) {
+      el.style.height = '';
+      return;
+    }
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+  }, []);
+
+  useLayoutEffect(fitHeight, [value, fitHeight]);
+
+  // Al cambiar el ancho (girar el móvil, redimensionar la ventana o la vista previa) el texto ocupa
+  // otro número de líneas: se vuelve a calcular para que la altura nunca quede desfasada
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let lastWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      fitHeight();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fitHeight]);
 
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus({ preventScroll: true });
