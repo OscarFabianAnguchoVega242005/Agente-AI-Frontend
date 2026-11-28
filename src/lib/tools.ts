@@ -6,6 +6,7 @@ import {
   FolderTree,
   GitBranch,
   GitPullRequest,
+  Globe,
   History,
   Hourglass,
   KeyRound,
@@ -161,6 +162,37 @@ export function describeStep(step: AgentStep): StepView {
     case 'rate_limit_wait': {
       const seconds = typeof input.seconds === 'number' ? input.seconds : 0;
       return { icon: Hourglass, label: `Esperó ${seconds} s por el límite del plan gratuito`, failed: false };
+    }
+    case 'web_search': {
+      const out = parseJson(step.tool_output);
+      const sources = out && Array.isArray(out.sources) ? out.sources.length : null;
+      const query = str(input.query);
+      const short = query.length > 80 ? `${query.slice(0, 80)}…` : query;
+      return {
+        icon: Globe,
+        label: `Buscó en internet: "${short}"${sources ? ` (${sources} fuente${sources === 1 ? '' : 's'})` : ''}`,
+        failed,
+      };
+    }
+    case 'list_commits': {
+      const out = parseJson(step.tool_output);
+      const n = out && typeof out.commits_returned === 'number' ? out.commits_returned : null;
+      const path = str(input.path);
+      return {
+        icon: History,
+        label: `Revisó ${n ?? 'los'} commits${path ? ` de ${path}` : ''} y sus autores`,
+        failed,
+      };
+    }
+    case 'get_commit': {
+      const out = parseJson(step.tool_output);
+      const url = out ? str(out.url) : '';
+      return {
+        icon: GitBranch,
+        label: `Revisó el commit ${str(input.sha).slice(0, 7)}`,
+        failed,
+        link: !failed && url.startsWith('https://github.com/') ? { href: url, text: 'Ver commit' } : undefined,
+      };
     }
     case 'save_project_memory':
       return { icon: Brain, label: `Guardó notas del proyecto ${str(input.repo_name)}`.trim(), failed };
