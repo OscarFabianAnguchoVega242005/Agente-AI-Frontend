@@ -24,7 +24,7 @@ export const MODE_OPTIONS: ModeOption[] = [
   {
     id: 'general',
     label: 'General',
-    description: 'Preguntas y tareas rápidas sobre tus repositorios',
+    description: 'Preguntas de cualquier tema, búsquedas en internet y tareas rápidas',
     icon: MessageSquare,
   },
 ];

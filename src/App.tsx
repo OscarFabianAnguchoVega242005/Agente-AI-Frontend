@@ -38,6 +38,7 @@ import {
 } from './types';
 
 const SIDEBAR_KEY = 'atlas.sidebar.expanded';
+const DEFAULT_MODE: AgentMode = 'general';
 /** Portátiles y tablets en horizontal: con la vista previa abierta, el menú lateral se pliega para dejar sitio al chat. */
 const PREVIEW_COLLAPSES_SIDEBAR = '(min-width: 1024px) and (max-width: 1599px)';
 /** Móvil o pantalla baja (móvil en horizontal): bienvenida compacta con el cuadro de texto abajo. */
@@ -105,7 +106,8 @@ function Workspace({ email }: { email: string }) {
 
   // Composer
   const [draft, setDraft] = useState('');
-  const [mode, setMode] = useState<AgentMode>('vibecoding');
+  // Modo por defecto al cargar y en cada chat nuevo
+  const [mode, setMode] = useState<AgentMode>(DEFAULT_MODE);
   const [targetRepo, setTargetRepo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   /** Mensaje recién enviado que aún no aparece en la conversación cargada del servidor. */
@@ -230,11 +232,15 @@ function Workspace({ email }: { email: string }) {
     setMobileOpen(false);
   }, []);
 
-  /** Cambio de chat iniciado por el usuario: el repositorio vuelve a "Sin repositorio" por seguridad. */
+  /**
+   * Cambio de chat iniciado por el usuario: el repositorio vuelve a "Sin repositorio" por seguridad
+   * y un chat nuevo empieza siempre en modo General.
+   */
   const openChat = useCallback(
     (id: string | null) => {
       setTargetRepo('');
       setPreview(null);
+      if (id === null) setMode(DEFAULT_MODE);
       navigate(id);
     },
     [navigate]
