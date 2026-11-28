@@ -219,17 +219,17 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
 
         <div className="mt-6">{kind === 'privacy' ? <Privacy /> : <Terms />}</div>
 
-        <footer className="mt-12 pt-6 border-t border-white/[0.06] flex flex-wrap gap-x-5 gap-y-2 text-sm text-zinc-500">
-          <a href="/" className="hover:text-zinc-300">
+        <footer className="mt-12 pt-4 border-t border-white/[0.06] flex flex-wrap gap-x-1 text-sm text-zinc-500 -ml-2.5">
+          <a href="/" className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Inicio
           </a>
-          <a href="/privacidad" className="hover:text-zinc-300">
+          <a href="/privacidad" className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Privacidad
           </a>
-          <a href="/terminos" className="hover:text-zinc-300">
+          <a href="/terminos" className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Términos
           </a>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-zinc-300">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Contacto
           </a>
         </footer>

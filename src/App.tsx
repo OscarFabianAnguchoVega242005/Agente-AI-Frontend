@@ -6,6 +6,8 @@ import { api } from './lib/api';
 import { chatTitle, displayName, firstName } from './lib/format';
 import { AuthScreen } from './components/AuthScreen';
 import { LegalPage } from './components/LegalPage';
+import { GoogleCallback } from './components/GoogleCallback';
+import { GOOGLE_CALLBACK_PATH } from './lib/googleAuth';
 import { AtlasLogo } from './components/AtlasLogo';
 import { Sidebar } from './components/Sidebar';
 import { Composer } from './components/Composer';
@@ -59,16 +61,18 @@ function taskIdFromUrl(): string | null {
 }
 
 /** Páginas públicas (no requieren iniciar sesión). */
-function publicPage(): 'privacy' | 'terms' | null {
+function publicPage(): 'privacy' | 'terms' | 'google' | null {
   const path = window.location.pathname.replace(/\/+$/, '');
   if (path === '/privacidad') return 'privacy';
   if (path === '/terminos') return 'terms';
+  if (path === GOOGLE_CALLBACK_PATH) return 'google';
   return null;
 }
 
 export default function App() {
-  const legal = publicPage();
-  return legal ? <LegalPage kind={legal} /> : <AuthGate />;
+  const page = publicPage();
+  if (page === 'google') return <GoogleCallback />;
+  return page ? <LegalPage kind={page} /> : <AuthGate />;
 }
 
 function AuthGate() {

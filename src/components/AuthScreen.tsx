@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   Eye,
   EyeOff,
@@ -6,13 +6,12 @@ import {
   Globe,
   LoaderCircle,
   Mic,
-  RotateCw,
   ShieldCheck,
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
 import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../lib/supabase';
-import { GOOGLE_CLIENT_ID, createNonce, loadGoogleIdentity, type GoogleIdentity } from '../lib/googleIdentity';
+import { GoogleAuthError, signInWithGooglePopup } from '../lib/googleAuth';
 import { AtlasLogo } from './AtlasLogo';
 import { CONTACT_EMAIL } from './LegalPage';
 
@@ -127,18 +126,57 @@ const FEATURES: Array<{ icon: LucideIcon; text: string }> = [
 
 const legalLink = 'text-zinc-400 underline underline-offset-2 decoration-zinc-600 hover:text-zinc-200';
 
+type GoogleState = 'idle' | 'waiting' | 'signing';
+
+/**
+ * Botón "Continuar con Google" con el diseño de Atlas (sigue las pautas de marca de Google: logo oficial,
+ * fondo blanco y el texto "Continuar con Google"), con un brillo suave en los colores de Atlas.
+ */
+function GoogleButton({
+  state,
+  loading,
+  disabled,
+  onClick,
+}: {
+  state: GoogleState;
+  loading: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const busy = loading || state !== 'idle';
+  const label =
+    state === 'waiting' ? 'Continúa en la ventana de Google…' : state === 'signing' ? 'Entrando…' : 'Continuar con Google';
+  return (
+    <div className={`group relative ${disabled && !loading ? 'opacity-60' : ''}`}>
+      {!disabled && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-1 rounded-full bg-[linear-gradient(90deg,#4F8CFF,#9B72F2,#E8836B)] opacity-25 blur-lg transition-opacity duration-300 group-hover:opacity-50"
+        />
+      )}
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || busy}
+        aria-busy={busy}
+        className="relative w-full h-12 rounded-full bg-white text-[#1f1f1f] text-[15px] font-medium flex items-center justify-center gap-3 px-5 shadow-[0_1px_2px_rgba(0,0,0,0.35)] ring-1 ring-black/5 transition-[background-color,transform] duration-150 hover:bg-[#f6f7f8] active:scale-[0.985] disabled:cursor-default disabled:hover:bg-white disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ab4f8] focus-visible:ring-offset-2 focus-visible:ring-offset-[#131314]"
+      >
+        {busy ? (
+          <LoaderCircle className="w-5 h-5 shrink-0 animate-spin text-zinc-500" />
+        ) : (
+          <GoogleLogo className="w-5 h-5 shrink-0" />
+        )}
+        <span className="truncate">{label}</span>
+      </button>
+    </div>
+  );
+}
+
 export function AuthScreen() {
   const [providers, setProviders] = useState<Providers | 'error' | null>(null);
   const [notice, setNotice] = useState<string | null>(oauthErrorFromUrl);
   const [showEmail, setShowEmail] = useState(false);
-
-  // Botón oficial de Google (Google Identity Services)
-  const [gis, setGis] = useState<'loading' | 'ready' | 'failed'>('loading');
-  const [signingIn, setSigningIn] = useState(false);
-  const gisRef = useRef<HTMLDivElement>(null);
-  const googleRef = useRef<GoogleIdentity | null>(null);
-  const nonceRef = useRef('');
-  const finishRef = useRef<(credential: string) => void>(() => undefined);
+  const [googleState, setGoogleState] = useState<GoogleState>('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -160,91 +198,41 @@ export function AuthScreen() {
   const googleOn = providers === 'error' || (providers !== null && providers.google);
   const googlePending = providers !== null && providers !== 'error' && !providers.google;
 
-  /** Dibuja el botón oficial al ancho disponible (Google lo pide en píxeles, de 200 a 400). */
-  const drawButton = useCallback(() => {
-    const container = gisRef.current;
-    const google = googleRef.current;
-    if (!container || !google) return;
-    const width = Math.round(Math.min(400, Math.max(200, container.clientWidth)));
-    container.replaceChildren();
-    google.renderButton(container, {
-      type: 'standard',
-      theme: 'outline',
-      size: 'large',
-      text: 'continue_with',
-      shape: 'pill',
-      logo_alignment: 'center',
-      width,
-      locale: 'es',
-    });
-  }, []);
-
-  /** Prepara un intento de acceso: nonce nuevo y botón listo. */
-  const setupGoogle = useCallback(async () => {
-    const google = await loadGoogleIdentity();
-    const { raw, hashed } = await createNonce();
-    nonceRef.current = raw;
-    googleRef.current = google;
-    google.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      nonce: hashed,
-      ux_mode: 'popup',
-      context: 'signin',
-      itp_support: true,
-      callback: (response) => finishRef.current(response.credential),
-    });
-    drawButton();
-  }, [drawButton]);
-
-  const startGoogle = useCallback(() => {
-    setGis('loading');
-    setupGoogle()
-      .then(() => setGis('ready'))
-      .catch(() => setGis('failed'));
-  }, [setupGoogle]);
-
-  // Google devuelve el token de identidad a la página y Supabase crea la sesión con él
-  finishRef.current = (credential: string) => {
+  // Debe llamarse directamente desde el clic: la ventana de Google se abre antes de cualquier espera
+  const continueWithGoogle = () => {
     setNotice(null);
-    setSigningIn(true);
-    void supabase.auth
-      .signInWithIdToken({ provider: 'google', token: credential, nonce: nonceRef.current })
-      .then(({ error }) => {
-        if (!error) return; // App detecta la sesión y abre Atlas
-        setSigningIn(false);
+    setGoogleState('waiting');
+    signInWithGooglePopup()
+      .then(async (result) => {
+        if (!result) return; // redirección completa a Google en curso
+        setGoogleState('signing');
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: result.idToken,
+          nonce: result.nonce,
+        });
+        if (error) throw error;
+        // App detecta la sesión y abre Atlas
+      })
+      .catch((err: unknown) => {
+        setGoogleState('idle');
+        if (err instanceof GoogleAuthError) {
+          if (err.code === 'closed' || err.code === 'cancelled') return; // lo cerró el usuario
+          setNotice(
+            err.code === 'state'
+              ? 'No se pudo verificar la respuesta de Google. Vuelve a intentarlo.'
+              : 'Google no devolvió los datos de acceso. Vuelve a intentarlo.'
+          );
+          return;
+        }
+        const text = (err as Error)?.message ?? String(err);
         setNotice(
-          /signups? not allowed|signup.*disabled/i.test(error.message)
+          /signups? not allowed|signup.*disabled/i.test(text)
             ? 'Esta cuenta de Google no tiene acceso a Atlas.'
-            : `No se pudo entrar con Google: ${error.message}`
+            : `No se pudo entrar con Google: ${text}`
         );
-        startGoogle(); // el nonce es de un solo uso
       });
   };
-
-  useEffect(() => {
-    if (googleOn) startGoogle();
-  }, [googleOn, startGoogle]);
-
-  // Si cambia el ancho (girar el móvil, redimensionar), el botón se vuelve a dibujar a su medida
-  useEffect(() => {
-    const container = gisRef.current;
-    if (gis !== 'ready' || !container || typeof ResizeObserver === 'undefined') return;
-    let last = container.clientWidth;
-    const observer = new ResizeObserver(() => {
-      if (Math.abs(container.clientWidth - last) < 16) return;
-      last = container.clientWidth;
-      drawButton();
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [gis, drawButton]);
-
-  const placeholder = (label: string, spinning: boolean) => (
-    <div className="absolute inset-0 rounded-full bg-white text-[#1f1f1f] text-sm font-medium flex items-center justify-center gap-3 opacity-80">
-      {spinning ? <LoaderCircle className="w-4 h-4 animate-spin text-zinc-500" /> : <GoogleLogo className="w-4 h-4" />}
-      {label}
-    </div>
-  );
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain">
@@ -266,39 +254,19 @@ export function AuthScreen() {
           {notice && (
             <div
               role="alert"
-              className="mb-3 text-sm px-4 py-3 rounded-xl border bg-red-500/[0.08] border-red-500/20 text-red-200 flex gap-2.5"
+              className="mb-4 text-sm px-4 py-3 rounded-xl border bg-red-500/[0.08] border-red-500/20 text-red-200 flex gap-2.5"
             >
               <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />
               <span>{notice}</span>
             </div>
           )}
 
-          {googleOn && gis === 'failed' ? (
-            <div role="alert" className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-center">
-              <p className="text-sm leading-relaxed text-zinc-300">
-                No se pudo cargar el botón de Google. Revisa tu conexión o desactiva el bloqueador de anuncios para este
-                sitio.
-              </p>
-              <button
-                type="button"
-                onClick={startGoogle}
-                className="mt-3 h-10 px-5 rounded-full bg-white/10 hover:bg-white/15 text-sm font-medium text-zinc-100 inline-flex items-center gap-2 transition"
-              >
-                <RotateCw className="w-4 h-4" /> Reintentar
-              </button>
-            </div>
-          ) : googleOn ? (
-            <div className="relative h-10">
-              {/* Aquí Google dibuja su botón oficial; mientras carga o se valida, se ve un marcador igual */}
-              <div ref={gisRef} className={`w-full flex justify-center ${gis === 'ready' && !signingIn ? '' : 'invisible'}`} />
-              {(gis !== 'ready' || signingIn) && placeholder(signingIn ? 'Entrando…' : 'Continuar con Google', true)}
-            </div>
-          ) : (
-            // Comprobando la configuración, o Google aún sin activar
-            <div className="relative h-10" aria-disabled="true">
-              {placeholder('Continuar con Google', providers === null)}
-            </div>
-          )}
+          <GoogleButton
+            state={googleState}
+            loading={providers === null}
+            disabled={!googleOn}
+            onClick={continueWithGoogle}
+          />
 
           {googlePending && (
             <div className="mt-5 space-y-3">
@@ -324,7 +292,7 @@ export function AuthScreen() {
               </button>
             ))}
 
-          <p className="mt-4 text-center text-xs leading-relaxed text-zinc-500">
+          <p className="mt-5 text-center text-xs leading-relaxed text-zinc-500">
             Al continuar aceptas los{' '}
             <a href="/terminos" className={legalLink}>
               Términos
@@ -353,14 +321,14 @@ export function AuthScreen() {
           </section>
         </main>
 
-        <footer className="relative mt-10 flex items-center gap-5 text-xs text-zinc-500">
-          <a href="/privacidad" className="hover:text-zinc-300">
+        <footer className="relative mt-8 flex items-center gap-1 text-xs text-zinc-500">
+          <a href="/privacidad" className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Privacidad
           </a>
-          <a href="/terminos" className="hover:text-zinc-300">
+          <a href="/terminos" className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Términos
           </a>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-zinc-300">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="inline-flex items-center h-10 px-2.5 rounded-full hover:text-zinc-300">
             Contacto
           </a>
         </footer>
