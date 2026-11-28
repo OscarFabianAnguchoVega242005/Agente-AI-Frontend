@@ -1,3 +1,5 @@
+import type { AttachmentView } from './lib/attachments';
+
 export type AgentMode = 'vibecoding' | 'appsec' | 'general' | 'gmail';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
 
@@ -50,6 +52,8 @@ export interface AgentStep {
 export interface ConversationTurn {
   task: TaskDetail;
   steps: AgentStep[];
+  /** Archivos que el usuario adjuntó a ese mensaje (con enlaces firmados temporales) */
+  attachments?: AttachmentView[];
 }
 
 export interface ConnectorsResponse {

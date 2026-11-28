@@ -72,13 +72,26 @@ export const api = {
   deleteConversation: (id: string) =>
     request<{ deleted: true }>(`/api/conversations/${id}`, { method: 'DELETE' }),
 
-  createTask: (payload: { prompt: string; mode: AgentMode; targetRepo?: string; conversationId?: string }) =>
+  createTask: (payload: {
+    prompt: string;
+    mode: AgentMode;
+    targetRepo?: string;
+    conversationId?: string;
+    attachments?: Array<{ name: string; mimeType: string; data: string }>;
+  }) =>
     request<{ taskId: string; conversationId: string; status: string }>('/api/tasks', {
       method: 'POST',
       // Zona horaria del navegador: Atlas da las horas en hora local
       body: JSON.stringify({ ...payload, timeZone: browserTimeZone() }),
     }),
+
+  transcribe: (audio: string, mimeType: string) => transcribeAudio(audio, mimeType),
 };
+
+/** Dictado por voz cuando el navegador no tiene reconocimiento propio: Atlas transcribe el audio. */
+export function transcribeAudio(audio: string, mimeType: string) {
+  return request<{ text: string }>('/api/transcribe', { method: 'POST', body: JSON.stringify({ audio, mimeType }) });
+}
 
 function browserTimeZone(): string | undefined {
   try {

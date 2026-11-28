@@ -1,8 +1,36 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { ArrowUp, Check, ChevronDown, FolderGit2, LoaderCircle, Lock, Plug, Search } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  FileCode2,
+  FileText,
+  FolderGit2,
+  LoaderCircle,
+  Lock,
+  Mic,
+  Plug,
+  Plus,
+  Search,
+  Square,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { MODE_OPTIONS, modeMeta } from '../lib/modes';
 import { usePopover } from '../hooks/usePopover';
 import { COARSE_POINTER } from '../hooks/useMediaQuery';
+import { useDictation } from '../hooks/useDictation';
+import { ACCEPT_ATTR, MAX_ATTACHMENTS, formatSize, type DraftAttachment } from '../lib/attachments';
 import { repoId, type AgentMode, type RepoItem } from '../types';
 
 const MAX_CHARS = 8000;
@@ -22,6 +50,13 @@ interface Props {
   submitting: boolean;
   placeholder?: string;
   autoFocus?: boolean;
+  /** Archivos adjuntos del mensaje que se está escribiendo */
+  attachments: DraftAttachment[];
+  onAddFiles: (files: File[]) => void;
+  onRemoveAttachment: (id: string) => void;
+  /** Aviso sobre los adjuntos (formato no admitido, demasiado grande…) */
+  notice?: string | null;
+  onDismissNotice?: () => void;
 }
 
 /*
@@ -50,7 +85,8 @@ function ModeMenu({ mode, onChange }: { mode: AgentMode; onChange: (m: AgentMode
         className={`${toolbarBtn} shrink-0 text-zinc-300 hover:bg-white/[0.06]`}
       >
         <Icon className="w-4 h-4 shrink-0" />
-        <span className="hidden @min-[22rem]:inline">{current.label}</span>
+        {/* El nombre del modo solo cabe en cuadros anchos; en móvil basta el icono */}
+        <span className="hidden @min-[26rem]:inline">{current.label}</span>
         <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
       </button>
 
@@ -146,7 +182,8 @@ function RepoMenu({
         className={`${toolbarBtn} min-w-0 max-w-full @md:max-w-[15rem] text-zinc-300 hover:bg-white/[0.06]`}
       >
         <FolderGit2 className="w-4 h-4 shrink-0" />
-        <span className="truncate">{label}</span>
+        {/* "Sin repositorio" se oculta en cuadros muy estrechos; el nombre de un repo elegido siempre se ve */}
+        <span className={`truncate ${value ? '' : 'hidden @min-[22rem]:inline'}`}>{label}</span>
         <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
       </button>
 
@@ -212,6 +249,64 @@ function RepoMenu({
   );
 }
 
+/** Miniatura de un adjunto antes de enviarlo. */
+function DraftChip({ attachment: a, onRemove }: { attachment: DraftAttachment; onRemove: () => void }) {
+  // Botón de quitar: zona táctil de 32 px con un círculo visible pequeño
+  const remove = (extra: string) => (
+    <button
+      type="button"
+      onClick={onRemove}
+      aria-label={`Quitar ${a.name}`}
+      title="Quitar"
+      className={`w-8 h-8 flex items-center justify-center shrink-0 group/remove ${extra}`}
+    >
+      <span className="w-5 h-5 rounded-full bg-black/75 border border-white/20 text-zinc-100 flex items-center justify-center group-hover/remove:bg-black">
+        <X className="w-3 h-3" />
+      </span>
+    </button>
+  );
+
+  if (a.kind === 'image') {
+    return (
+      <div className="relative shrink-0 w-16 h-16" title={`${a.name} · ${formatSize(a.size)}`}>
+        <div className="w-full h-full rounded-xl overflow-hidden border border-white/10 bg-white/[0.04]">
+          {a.previewUrl && <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />}
+        </div>
+        {a.status === 'processing' && (
+          <div className="absolute inset-0 rounded-xl bg-black/55 flex items-center justify-center">
+            <LoaderCircle className="w-5 h-5 animate-spin text-zinc-200" />
+          </div>
+        )}
+        {remove('absolute -top-2 -right-2')}
+      </div>
+    );
+  }
+
+  const Icon = a.kind === 'pdf' ? FileText : FileCode2;
+  const ext = a.name.includes('.') ? a.name.split('.').pop()!.toUpperCase().slice(0, 5) : 'TXT';
+  return (
+    <div
+      className="relative shrink-0 h-16 max-w-[15rem] rounded-xl bg-white/[0.04] border border-white/10 pl-2.5 flex items-center gap-2.5"
+      title={a.name}
+    >
+      <span
+        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+          a.kind === 'pdf' ? 'bg-red-400/15 text-red-300' : 'bg-[#8ab4f8]/15 text-[#8ab4f8]'
+        }`}
+      >
+        {a.status === 'processing' ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[13px] leading-5 text-zinc-200 truncate">{a.name}</span>
+        <span className="block text-[11px] leading-4 text-zinc-500">
+          {a.kind === 'pdf' ? 'PDF' : ext} · {formatSize(a.size)}
+        </span>
+      </span>
+      {remove('mr-1')}
+    </div>
+  );
+}
+
 export function Composer({
   value,
   onChange,
@@ -227,9 +322,25 @@ export function Composer({
   submitting,
   placeholder = 'Pídele algo a Atlas',
   autoFocus = false,
+  attachments,
+  onAddFiles,
+  onRemoveAttachment,
+  notice,
+  onDismissNotice,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canSend = value.trim().length >= 1 && value.length <= MAX_CHARS && !submitting;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  const dictation = useDictation({ getText: () => valueRef.current, setText: onChange });
+  const listening = dictation.state === 'listening';
+  const recording = dictation.state === 'recording';
+  const transcribing = dictation.state === 'transcribing';
+  const processing = attachments.some((a) => a.status === 'processing');
+  const hasContent = value.trim().length > 0 || attachments.length > 0;
+  const canSend = hasContent && !processing && value.length <= MAX_CHARS && !submitting && !recording && !transcribing;
+  const message = dictation.error ?? notice ?? null;
 
   // Crece con el texto; el tope real lo marca max-height (más bajo en pantallas cortas)
   const fitHeight = useCallback(() => {
@@ -265,36 +376,94 @@ export function Composer({
     if (autoFocus) textareaRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
+  const send = () => {
+    if (!canSend) return;
+    if (listening) dictation.cancel(); // lo dictado ya está en el cuadro
+    onSubmit();
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (canSend) onSubmit();
+    send();
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // En pantallas táctiles Intro hace salto de línea (el teclado no tiene Mayús+Intro); se envía con el botón
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !window.matchMedia(COARSE_POINTER).matches) {
       e.preventDefault();
-      if (canSend) onSubmit();
+      send();
     }
   };
+
+  // Pegar una captura de pantalla (Ctrl+V / Cmd+V) la adjunta
+  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (files.length) {
+      e.preventDefault();
+      onAddFiles(files);
+    }
+  };
+
+  const shownPlaceholder = listening
+    ? 'Escuchando… habla con naturalidad'
+    : recording
+      ? 'Grabando… toca ■ para terminar'
+      : transcribing
+        ? 'Transcribiendo tu voz…'
+        : placeholder;
+  const time = `${Math.floor(dictation.seconds / 60)}:${String(dictation.seconds % 60).padStart(2, '0')}`;
 
   return (
     <form
       onSubmit={handleSubmit}
       className="@container relative w-full rounded-[26px] @md:rounded-[28px] bg-[#1e1f20] border border-white/[0.08] focus-within:border-white/20 shadow-[0_8px_40px_rgba(0,0,0,0.35)] transition-colors"
     >
+      {attachments.length > 0 && (
+        <div className="flex gap-2.5 px-3 @md:px-4 pt-3 pb-1 overflow-x-auto overscroll-x-contain no-scrollbar" aria-label="Archivos adjuntos">
+          {attachments.map((a) => (
+            <DraftChip key={a.id} attachment={a} onRemove={() => onRemoveAttachment(a.id)} />
+          ))}
+        </div>
+      )}
+
       <textarea
         ref={textareaRef}
         rows={1}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder}
+        onPaste={handlePaste}
+        placeholder={shownPlaceholder}
         aria-label="Mensaje para Atlas"
         enterKeyHint="enter"
         className="block w-full resize-none bg-transparent px-4 @md:px-6 pt-3.5 tall:@md:pt-5 pb-1 tall:@md:pb-2 text-base @md:text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 outline-none max-h-[min(240px,32dvh)] overflow-y-auto"
       />
+
       <div className="flex items-center gap-0.5 @md:gap-1 px-1.5 @md:px-3 pb-1.5 tall:@md:pb-3">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={attachments.length >= MAX_ATTACHMENTS}
+          aria-label="Adjuntar imágenes o archivos"
+          title="Adjuntar imágenes o archivos (también puedes pegarlos o arrastrarlos)"
+          className="w-9 h-9 pointer-coarse:w-10 pointer-coarse:h-10 shrink-0 rounded-full flex items-center justify-center text-zinc-300 hover:bg-white/[0.06] disabled:opacity-40 transition"
+        >
+          <Plus className="w-5 h-5" />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ACCEPT_ATTR}
+          className="hidden"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = ''; // permite volver a elegir el mismo archivo
+            if (files.length) onAddFiles(files);
+          }}
+        />
         <ModeMenu mode={mode} onChange={onModeChange} />
         <RepoMenu
           repos={repos}
@@ -304,22 +473,69 @@ export function Composer({
           onOpenConnectors={onOpenConnectors}
           ownLogin={ownLogin}
         />
-        <div className="ml-auto pl-1 flex items-center gap-2 @md:gap-3 shrink-0">
+        <div className="ml-auto pl-1 flex items-center gap-1 @md:gap-2 shrink-0">
           {value.length > MAX_CHARS - 1000 && (
             <span className={`text-xs tabular-nums ${value.length > MAX_CHARS ? 'text-red-400' : 'text-zinc-500'}`}>
               {value.length}/{MAX_CHARS}
             </span>
           )}
+          {recording && (
+            <span className="text-xs tabular-nums text-red-300 pl-1" aria-live="polite">
+              {time}
+            </span>
+          )}
+          {dictation.supported && (
+            <button
+              type="button"
+              onClick={listening || recording ? dictation.stop : dictation.start}
+              disabled={transcribing || submitting}
+              aria-label={listening || recording ? 'Terminar de dictar' : transcribing ? 'Transcribiendo' : 'Dictar por voz'}
+              aria-pressed={listening || recording}
+              title={listening || recording ? 'Terminar de dictar' : 'Dictar por voz'}
+              className={`relative w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition disabled:opacity-60 ${
+                listening || recording ? 'bg-red-500 text-white hover:bg-red-400' : 'text-zinc-300 hover:bg-white/[0.06]'
+              }`}
+            >
+              {(listening || recording) && (
+                <span className="absolute inset-0 rounded-full bg-red-500/50 animate-ping motion-reduce:hidden" aria-hidden="true" />
+              )}
+              {transcribing ? (
+                <LoaderCircle className="w-5 h-5 animate-spin" />
+              ) : listening || recording ? (
+                <Square className="relative w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Mic className="w-5 h-5" />
+              )}
+            </button>
+          )}
           <button
             type="submit"
             disabled={!canSend}
             aria-label="Enviar"
-            className="w-10 h-10 rounded-full flex items-center justify-center bg-zinc-100 text-zinc-900 hover:bg-white disabled:bg-white/10 disabled:text-zinc-500 transition active:scale-95"
+            className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-zinc-100 text-zinc-900 hover:bg-white disabled:bg-white/10 disabled:text-zinc-500 transition active:scale-95"
           >
             {submitting ? <LoaderCircle className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
           </button>
         </div>
       </div>
+
+      {message && (
+        <div role="alert" className="flex items-start gap-2 pl-4 @md:pl-6 pr-2 pb-2 -mt-0.5 text-xs leading-5 text-red-300">
+          <TriangleAlert className="w-3.5 h-3.5 mt-[3px] shrink-0" />
+          <span className="flex-1 min-w-0">{message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              dictation.clearError();
+              onDismissNotice?.();
+            }}
+            aria-label="Cerrar aviso"
+            className="-my-1.5 w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-red-200/70 hover:text-red-100"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </form>
   );
 }

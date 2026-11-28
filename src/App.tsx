@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { LoaderCircle, Menu, Plug, RefreshCw, SquarePen, X } from 'lucide-react';
+import { LoaderCircle, Menu, Paperclip, Plug, RefreshCw, SquarePen, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { api } from './lib/api';
 import { chatTitle, displayName } from './lib/format';
@@ -14,6 +14,17 @@ import { ConnectorsModal, type Notice } from './components/ConnectorsModal';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { PreviewPanel, type PreviewState } from './components/PreviewPanel';
 import { extractFiles, isHtmlFile, type CodeFile } from './lib/files';
+import {
+  ATTACHMENTS_ONLY_PROMPT,
+  MAX_ATTACHMENTS,
+  MAX_TOTAL_BYTES,
+  classify,
+  formatSize,
+  newAttachmentId,
+  prepareFile,
+  type AttachmentView,
+  type DraftAttachment,
+} from './lib/attachments';
 import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
 import { COARSE_POINTER, useMediaQuery } from './hooks/useMediaQuery';
 import {
@@ -104,7 +115,18 @@ function Workspace({ email }: { email: string }) {
     targetRepo: string | null;
     conversationId: string | null;
     taskId?: string;
+    attachments: AttachmentView[];
   } | null>(null);
+
+  // Archivos adjuntos del mensaje que se está escribiendo
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const [attachNotice, setAttachNotice] = useState<string | null>(null);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  /** Adjuntos quitados mientras se preparaban: su resultado se descarta */
+  const removedIds = useRef(new Set<string>());
 
   // Eliminar chat
   const [deleteTarget, setDeleteTarget] = useState<TaskSummary | null>(null);
@@ -272,15 +294,103 @@ function Workspace({ email }: { email: string }) {
   const showPending = pending !== null && pending.conversationId === selectedId;
   const convoBusy = showPending || currentTurns.some((t) => !isFinished(t.task.status));
 
+  const removeAttachment = useCallback((id: string) => {
+    removedIds.current.add(id);
+    const target = attachmentsRef.current.find((a) => a.id === id);
+    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  /** Añade archivos (selector, pegar o arrastrar): se validan y se preparan en segundo plano. */
+  const addFiles = useCallback(
+    (files: File[]) => {
+      setAttachNotice(null);
+      const room = MAX_ATTACHMENTS - attachmentsRef.current.length;
+      const accepted: Array<{ file: File; draft: DraftAttachment }> = [];
+      let problem: string | null = null;
+      for (const file of files) {
+        const kind = classify(file);
+        if (!kind) {
+          problem ??= `"${file.name}" no es compatible. Adjunta imágenes, PDF o archivos de texto o código.`;
+          continue;
+        }
+        if (accepted.length >= room) {
+          problem = `Puedes adjuntar como máximo ${MAX_ATTACHMENTS} archivos por mensaje.`;
+          break;
+        }
+        accepted.push({
+          file,
+          draft: {
+            id: newAttachmentId(),
+            name: file.name,
+            mimeType: file.type,
+            kind,
+            size: file.size,
+            status: 'processing',
+            previewUrl: kind === 'image' ? URL.createObjectURL(file) : undefined,
+          },
+        });
+      }
+      if (problem) setAttachNotice(problem);
+      if (accepted.length === 0) return;
+      setAttachments((prev) => [...prev, ...accepted.map((a) => a.draft)]);
+
+      for (const { file, draft: item } of accepted) {
+        prepareFile(file, item.kind)
+          .then((ready) => {
+            if (removedIds.current.has(item.id)) return; // lo quitaron mientras se preparaba
+            const others = attachmentsRef.current
+              .filter((a) => a.id !== item.id && a.kind !== 'text' && a.status === 'ready')
+              .reduce((sum, a) => sum + a.size, 0);
+            if (item.kind !== 'text' && others + ready.size > MAX_TOTAL_BYTES) {
+              removeAttachment(item.id);
+              setAttachNotice(`Los adjuntos superan ${formatSize(MAX_TOTAL_BYTES)} en total. Quita alguno o envíalos en otro mensaje.`);
+              return;
+            }
+            setAttachments((prev) => prev.map((a) => (a.id === item.id ? { ...a, ...ready, status: 'ready' } : a)));
+          })
+          .catch((err: Error) => {
+            removeAttachment(item.id);
+            setAttachNotice(err.message || `No se pudo leer "${file.name}".`);
+          });
+      }
+    },
+    [removeAttachment]
+  );
+
+  // Soltar un archivo fuera de la zona del chat no debe abrirlo en la pestaña (se perdería Atlas)
+  useEffect(() => {
+    const block = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    window.addEventListener('dragover', block);
+    window.addEventListener('drop', block);
+    return () => {
+      window.removeEventListener('dragover', block);
+      window.removeEventListener('drop', block);
+    };
+  }, []);
+
   const submitTask = async () => {
     const text = draft.trim();
-    if (!text || submitting || convoBusy) return;
+    const ready = attachments.filter((a) => a.status === 'ready' && a.data);
+    if ((!text && ready.length === 0) || submitting || convoBusy) return;
+    if (attachments.some((a) => a.status === 'processing')) return;
 
     const repo = targetRepo || null;
     const continuing = selectedId; // null = chat nuevo
+    const sent: AttachmentView[] = ready.map((a) => ({
+      name: a.name,
+      mimeType: a.mimeType,
+      kind: a.kind,
+      size: a.size,
+      url: a.previewUrl ?? null,
+    }));
     setSubmitting(true);
-    setPending({ prompt: text, mode, targetRepo: repo, conversationId: continuing });
+    setPending({ prompt: text, mode, targetRepo: repo, conversationId: continuing, attachments: sent });
     setDraft('');
+    setAttachments([]);
+    setAttachNotice(null);
 
     try {
       const { taskId, conversationId } = await api.createTask({
@@ -288,9 +398,10 @@ function Workspace({ email }: { email: string }) {
         mode,
         targetRepo: repo ?? undefined,
         conversationId: continuing ?? undefined,
+        ...(ready.length ? { attachments: ready.map((a) => ({ name: a.name, mimeType: a.mimeType, data: a.data! })) } : {}),
       });
       const now = new Date().toISOString();
-      setPending({ prompt: text, mode, targetRepo: repo, conversationId, taskId });
+      setPending({ prompt: text, mode, targetRepo: repo, conversationId, taskId, attachments: sent });
 
       if (continuing) {
         // Sube el chat al principio del historial y vuelve a consultar
@@ -304,7 +415,7 @@ function Workspace({ email }: { email: string }) {
         setTasks((prev) => [
           {
             id: conversationId,
-            prompt: text,
+            prompt: text || ATTACHMENTS_ONLY_PROMPT,
             mode,
             target_repo: repo,
             status: 'running',
@@ -318,6 +429,7 @@ function Workspace({ email }: { email: string }) {
     } catch (err) {
       setError((err as Error).message);
       setDraft(text);
+      setAttachments(ready);
       setPending(null);
     } finally {
       setSubmitting(false);
@@ -365,6 +477,7 @@ function Workspace({ email }: { email: string }) {
       targetRepo: t.task.target_repo,
       task: t.task,
       steps: t.steps,
+      attachments: t.attachments ?? [],
     })),
     ...(showPending && pending
       ? [
@@ -375,6 +488,7 @@ function Workspace({ email }: { email: string }) {
             targetRepo: pending.targetRepo,
             task: null,
             steps: [],
+            attachments: pending.attachments,
           },
         ]
       : []),
@@ -441,6 +555,11 @@ function Workspace({ email }: { email: string }) {
       }
       // En móvil el foco automático abriría el teclado al cambiar de chat
       autoFocus={!coarsePointer}
+      attachments={attachments}
+      onAddFiles={addFiles}
+      onRemoveAttachment={removeAttachment}
+      notice={attachNotice}
+      onDismissNotice={() => setAttachNotice(null)}
     />
   );
 
@@ -481,7 +600,37 @@ function Workspace({ email }: { email: string }) {
 
       {/* Columna principal: es un contenedor (@container) para que el chat y el cuadro de texto
           se adapten al ancho disponible (menú lateral abierto o plegado, vista previa abierta…) */}
-      <div className="@container flex-1 min-w-0 h-full flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <div
+        className="@container relative flex-1 min-w-0 h-full flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+        onDragEnter={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          dragDepth.current += 1;
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+        }}
+        onDragLeave={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
+        }}
+        onDrop={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          addFiles(Array.from(e.dataTransfer.files));
+        }}
+      >
+        {dragging && (
+          <div className="pointer-events-none absolute inset-2 z-40 rounded-3xl border-2 border-dashed border-[#8ab4f8]/60 bg-[#131314]/90 flex flex-col items-center justify-center gap-2 text-center px-6 animate-fade">
+            <Paperclip className="w-7 h-7 text-[#8ab4f8]" />
+            <p className="text-base font-medium text-zinc-100">Suelta para adjuntar</p>
+            <p className="text-sm text-zinc-400">Imágenes, PDF o archivos de texto y código</p>
+          </div>
+        )}
         <header className="h-14 sm:h-16 shrink-0 flex items-center gap-1 sm:gap-2 px-2 sm:px-5">
           <button
             type="button"
