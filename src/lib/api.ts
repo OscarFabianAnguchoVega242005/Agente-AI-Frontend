@@ -75,6 +75,15 @@ export const api = {
   createTask: (payload: { prompt: string; mode: AgentMode; targetRepo?: string; conversationId?: string }) =>
     request<{ taskId: string; conversationId: string; status: string }>('/api/tasks', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      // Zona horaria del navegador: Atlas da las horas en hora local
+      body: JSON.stringify({ ...payload, timeZone: browserTimeZone() }),
     }),
 };
+
+function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
