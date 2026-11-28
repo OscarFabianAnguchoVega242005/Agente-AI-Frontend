@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase';
 import { api } from './lib/api';
 import { chatTitle, displayName, firstName } from './lib/format';
 import { AuthScreen } from './components/AuthScreen';
+import { LegalPage } from './components/LegalPage';
 import { AtlasLogo } from './components/AtlasLogo';
 import { Sidebar } from './components/Sidebar';
 import { Composer } from './components/Composer';
@@ -57,7 +58,20 @@ function taskIdFromUrl(): string | null {
   return match?.[1] ?? null;
 }
 
+/** Páginas públicas (no requieren iniciar sesión). */
+function publicPage(): 'privacy' | 'terms' | null {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  if (path === '/privacidad') return 'privacy';
+  if (path === '/terminos') return 'terms';
+  return null;
+}
+
 export default function App() {
+  const legal = publicPage();
+  return legal ? <LegalPage kind={legal} /> : <AuthGate />;
+}
+
+function AuthGate() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 

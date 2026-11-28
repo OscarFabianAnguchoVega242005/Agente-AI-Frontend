@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Eye, EyeOff, LoaderCircle, TriangleAlert } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  GitBranch,
+  Globe,
+  LoaderCircle,
+  Mic,
+  RotateCw,
+  ShieldCheck,
+  TriangleAlert,
+  type LucideIcon,
+} from 'lucide-react';
 import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../lib/supabase';
 import { GOOGLE_CLIENT_ID, createNonce, loadGoogleIdentity, type GoogleIdentity } from '../lib/googleIdentity';
 import { AtlasLogo } from './AtlasLogo';
+import { CONTACT_EMAIL } from './LegalPage';
 
 /** Logo de Google para el botón de acceso (según las pautas de marca de "Acceder con Google"). */
 function GoogleLogo({ className = 'w-5 h-5' }: { className?: string }) {
@@ -105,9 +117,18 @@ function EmailSignIn({ onNotice }: { onNotice: (text: string | null) => void }) 
   );
 }
 
+/** Qué hace Atlas: la página de inicio debe describir la app (lo exige Google para verificar la marca). */
+const FEATURES: Array<{ icon: LucideIcon; text: string }> = [
+  { icon: GitBranch, text: 'Programa en tus repositorios de GitHub: sube los cambios a una rama y abre un Pull Request.' },
+  { icon: ShieldCheck, text: 'Revisa la seguridad de tu código: credenciales expuestas y vulnerabilidades.' },
+  { icon: Globe, text: 'Investiga en internet y analiza imágenes, PDF y archivos de código.' },
+  { icon: Mic, text: 'Le hablas por voz y puede leerte sus respuestas.' },
+];
+
+const legalLink = 'text-zinc-400 underline underline-offset-2 decoration-zinc-600 hover:text-zinc-200';
+
 export function AuthScreen() {
   const [providers, setProviders] = useState<Providers | 'error' | null>(null);
-  const [redirecting, setRedirecting] = useState(false);
   const [notice, setNotice] = useState<string | null>(oauthErrorFromUrl);
   const [showEmail, setShowEmail] = useState(false);
 
@@ -134,12 +155,10 @@ export function AuthScreen() {
     };
   }, []);
 
-  // Con Google activado solo se muestra su botón. Mientras no lo esté, el correo sirve de respaldo para no
-  // quedarse fuera; si no se pudo comprobar, el correo queda detrás de un enlace.
-  const googleEnabled = providers !== null && (providers === 'error' || providers.google);
+  // Google activado (o sin poder comprobarlo: se intenta igual). Mientras no esté activado, el correo sirve de
+  // respaldo para no quedarse fuera.
+  const googleOn = providers === 'error' || (providers !== null && providers.google);
   const googlePending = providers !== null && providers !== 'error' && !providers.google;
-  // Con Google activado se usa su botón oficial; si no carga (bloqueadores, sin red), el acceso por redirección
-  const useOfficialButton = providers !== null && providers !== 'error' && providers.google && gis !== 'failed';
 
   /** Dibuja el botón oficial al ancho disponible (Google lo pide en píxeles, de 200 a 400). */
   const drawButton = useCallback(() => {
@@ -177,6 +196,13 @@ export function AuthScreen() {
     drawButton();
   }, [drawButton]);
 
+  const startGoogle = useCallback(() => {
+    setGis('loading');
+    setupGoogle()
+      .then(() => setGis('ready'))
+      .catch(() => setGis('failed'));
+  }, [setupGoogle]);
+
   // Google devuelve el token de identidad a la página y Supabase crea la sesión con él
   finishRef.current = (credential: string) => {
     setNotice(null);
@@ -191,24 +217,13 @@ export function AuthScreen() {
             ? 'Esta cuenta de Google no tiene acceso a Atlas.'
             : `No se pudo entrar con Google: ${error.message}`
         );
-        void setupGoogle().catch(() => setGis('failed')); // el nonce es de un solo uso
+        startGoogle(); // el nonce es de un solo uso
       });
   };
 
   useEffect(() => {
-    if (!(providers !== null && providers !== 'error' && providers.google)) return;
-    let cancelled = false;
-    setupGoogle()
-      .then(() => {
-        if (!cancelled) setGis('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setGis('failed');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [providers, setupGoogle]);
+    if (googleOn) startGoogle();
+  }, [googleOn, startGoogle]);
 
   // Si cambia el ancho (girar el móvil, redimensionar), el botón se vuelve a dibujar a su medida
   useEffect(() => {
@@ -224,32 +239,22 @@ export function AuthScreen() {
     return () => observer.disconnect();
   }, [gis, drawButton]);
 
-  const continueWithGoogle = async () => {
-    setNotice(null);
-    setRedirecting(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-        // Siempre deja elegir la cuenta de Google (útil si tienes varias)
-        queryParams: { prompt: 'select_account' },
-      },
-    });
-    if (error) {
-      setNotice(`No se pudo abrir el acceso con Google: ${error.message}`);
-      setRedirecting(false);
-    }
-  };
+  const placeholder = (label: string, spinning: boolean) => (
+    <div className="absolute inset-0 rounded-full bg-white text-[#1f1f1f] text-sm font-medium flex items-center justify-center gap-3 opacity-80">
+      {spinning ? <LoaderCircle className="w-4 h-4 animate-spin text-zinc-500" /> : <GoogleLogo className="w-4 h-4" />}
+      {label}
+    </div>
+  );
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain">
-      <div className="min-h-full flex flex-col items-center justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] [@media(max-height:560px)]:pt-6 [@media(max-height:560px)]:pb-6 relative overflow-hidden">
+      <div className="min-h-full flex flex-col items-center justify-center px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] [@media(max-height:560px)]:pt-6 relative overflow-hidden">
         <div
           className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] max-w-[200vw] h-[500px] rounded-full bg-[radial-gradient(closest-side,rgba(155,114,242,0.18),transparent)]"
           aria-hidden="true"
         />
 
-        <div className="relative w-full max-w-sm animate-rise">
+        <main className="relative w-full max-w-sm animate-rise my-auto">
           <div className="flex flex-col items-center text-center mb-8 [@media(max-height:560px)]:mb-5">
             <AtlasLogo className="w-12 h-12 [@media(max-height:560px)]:w-10 [@media(max-height:560px)]:h-10" />
             <h1 className="mt-5 [@media(max-height:560px)]:mt-3 text-[1.75rem] sm:text-3xl font-medium tracking-tight">
@@ -268,34 +273,31 @@ export function AuthScreen() {
             </div>
           )}
 
-          {useOfficialButton ? (
+          {googleOn && gis === 'failed' ? (
+            <div role="alert" className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-center">
+              <p className="text-sm leading-relaxed text-zinc-300">
+                No se pudo cargar el botón de Google. Revisa tu conexión o desactiva el bloqueador de anuncios para este
+                sitio.
+              </p>
+              <button
+                type="button"
+                onClick={startGoogle}
+                className="mt-3 h-10 px-5 rounded-full bg-white/10 hover:bg-white/15 text-sm font-medium text-zinc-100 inline-flex items-center gap-2 transition"
+              >
+                <RotateCw className="w-4 h-4" /> Reintentar
+              </button>
+            </div>
+          ) : googleOn ? (
             <div className="relative h-10">
               {/* Aquí Google dibuja su botón oficial; mientras carga o se valida, se ve un marcador igual */}
               <div ref={gisRef} className={`w-full flex justify-center ${gis === 'ready' && !signingIn ? '' : 'invisible'}`} />
-              {(gis !== 'ready' || signingIn) && (
-                <div
-                  aria-live="polite"
-                  className="absolute inset-0 rounded-full bg-white text-[#1f1f1f] text-sm font-medium flex items-center justify-center gap-3 opacity-80"
-                >
-                  <LoaderCircle className="w-4 h-4 animate-spin text-zinc-500" />
-                  {signingIn ? 'Entrando…' : 'Continuar con Google'}
-                </div>
-              )}
+              {(gis !== 'ready' || signingIn) && placeholder(signingIn ? 'Entrando…' : 'Continuar con Google', true)}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => void continueWithGoogle()}
-              disabled={!googleEnabled || redirecting}
-              className="w-full h-12 rounded-full bg-white hover:bg-zinc-100 text-[#1f1f1f] font-medium text-[15px] flex items-center justify-center gap-3 disabled:opacity-60 transition active:scale-[0.99] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
-            >
-              {providers === null || redirecting ? (
-                <LoaderCircle className="w-5 h-5 animate-spin text-zinc-500" />
-              ) : (
-                <GoogleLogo />
-              )}
-              Continuar con Google
-            </button>
+            // Comprobando la configuración, o Google aún sin activar
+            <div className="relative h-10" aria-disabled="true">
+              {placeholder('Continuar con Google', providers === null)}
+            </div>
           )}
 
           {googlePending && (
@@ -322,10 +324,46 @@ export function AuthScreen() {
               </button>
             ))}
 
-          <p className="mt-6 text-center text-xs leading-relaxed text-zinc-500">
-            Atlas usa tu nombre, correo y foto de Google para tu cuenta.
+          <p className="mt-4 text-center text-xs leading-relaxed text-zinc-500">
+            Al continuar aceptas los{' '}
+            <a href="/terminos" className={legalLink}>
+              Términos
+            </a>{' '}
+            y la{' '}
+            <a href="/privacidad" className={legalLink}>
+              Política de privacidad
+            </a>
+            . Atlas usa tu nombre, correo y foto de Google para tu cuenta.
           </p>
-        </div>
+
+          <section aria-labelledby="atlas-features" className="mt-9 pt-6 border-t border-white/[0.06]">
+            <h2 id="atlas-features" className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Qué hace Atlas
+            </h2>
+            <ul className="mt-4 space-y-3">
+              {FEATURES.map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-start gap-3 text-sm leading-relaxed text-zinc-300">
+                  <span className="w-8 h-8 rounded-full bg-white/[0.05] flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4 text-zinc-300" />
+                  </span>
+                  <span className="pt-1">{text}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </main>
+
+        <footer className="relative mt-10 flex items-center gap-5 text-xs text-zinc-500">
+          <a href="/privacidad" className="hover:text-zinc-300">
+            Privacidad
+          </a>
+          <a href="/terminos" className="hover:text-zinc-300">
+            Términos
+          </a>
+          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-zinc-300">
+            Contacto
+          </a>
+        </footer>
       </div>
     </div>
   );
