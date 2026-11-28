@@ -10,3 +10,6 @@ if (!supabaseUrl || !supabaseAnonKey || !apiBaseUrl) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const API_BASE_URL = apiBaseUrl.replace(/\/$/, '');
+/** Datos públicos del proyecto (la clave publicable va en el navegador por diseño). */
+export const SUPABASE_URL = supabaseUrl.replace(/\/$/, '');
+export const SUPABASE_ANON_KEY = supabaseAnonKey;

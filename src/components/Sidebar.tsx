@@ -18,15 +18,31 @@ interface Props {
   onRename: (id: string, title: string) => void;
   onNew: () => void;
   email: string;
+  /** Nombre y foto de la cuenta de Google (vacíos si se entró con correo) */
+  fullName?: string;
+  avatarUrl?: string;
   ghConnected: boolean;
   onOpenConnectors: () => void;
   onSignOut: () => void;
 }
 
-function UserAvatar({ email }: { email: string }) {
+function UserAvatar({ email, name, avatarUrl }: { email: string; name?: string; avatarUrl?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (avatarUrl && !failed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        // Las fotos de Google a veces no cargan si se envía el origen de la página
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="w-8 h-8 rounded-full shrink-0 object-cover bg-white/10"
+      />
+    );
+  }
   return (
     <span className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold text-white bg-linear-to-br from-[#4F8CFF] via-[#9B72F2] to-[#E8836B]">
-      {(email.charAt(0) || '?').toUpperCase()}
+      {((name || email).charAt(0) || '?').toUpperCase()}
     </span>
   );
 }
@@ -250,6 +266,8 @@ export function Sidebar({
   onRename,
   onNew,
   email,
+  fullName,
+  avatarUrl,
   ghConnected,
   onOpenConnectors,
   onSignOut,
@@ -399,13 +417,13 @@ export function Sidebar({
               className={`h-11 rounded-full flex items-center gap-3 text-sm hover:bg-white/[0.08] transition ${
                 full ? 'w-full px-1.5' : 'w-10 justify-center'
               }`}
-              title={email}
+              title={fullName ? `${fullName} · ${email}` : email}
               aria-label="Cuenta"
               aria-haspopup="menu"
               aria-expanded={userMenu.open}
             >
-              <UserAvatar email={email} />
-              {full && <span className="truncate text-zinc-300">{email}</span>}
+              <UserAvatar email={email} name={fullName} avatarUrl={avatarUrl} />
+              {full && <span className="truncate text-zinc-300">{fullName || email}</span>}
             </button>
 
             {userMenu.open && (
@@ -413,7 +431,10 @@ export function Sidebar({
                 role="menu"
                 className="absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-2xl bg-[#28292a] border border-white/10 shadow-2xl p-1.5 z-50 animate-pop"
               >
-                <div className="px-3 py-2 text-xs text-zinc-400 truncate">{email}</div>
+                <div className="px-3 py-2 min-w-0">
+                  {fullName && <div className="text-sm text-zinc-200 truncate">{fullName}</div>}
+                  <div className="text-xs text-zinc-400 truncate">{email}</div>
+                </div>
                 <button
                   type="button"
                   role="menuitem"

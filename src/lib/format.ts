@@ -1,5 +1,11 @@
 import type { TaskSummary } from '../types';
 
+/** Primer nombre a partir del nombre completo de Google ("Oscar Fabián …" → "Oscar"). */
+export function firstName(fullName: string | undefined | null): string {
+  const first = (fullName ?? '').trim().split(/\s+/)[0] ?? '';
+  return first ? first.charAt(0).toUpperCase() + first.slice(1) : '';
+}
+
 export function displayName(email: string | undefined): string {
   if (!email) return '';
   const local = email.split('@')[0] ?? '';

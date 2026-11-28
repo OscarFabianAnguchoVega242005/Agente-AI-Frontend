@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { LoaderCircle, Menu, Paperclip, Plug, RefreshCw, SquarePen, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { api } from './lib/api';
-import { chatTitle, displayName } from './lib/format';
+import { chatTitle, displayName, firstName } from './lib/format';
 import { AuthScreen } from './components/AuthScreen';
 import { AtlasLogo } from './components/AtlasLogo';
 import { Sidebar } from './components/Sidebar';
@@ -65,6 +65,10 @@ export default function App() {
     void supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthLoading(false);
+      // Al volver de Google, Supabase vacía el fragmento con los tokens pero deja un "#" al final
+      if (window.location.href.endsWith('#')) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
@@ -83,10 +87,20 @@ export default function App() {
   if (!session) return <AuthScreen />;
 
   // La key reinicia todo el estado del espacio de trabajo al cambiar de usuario.
-  return <Workspace key={session.user.id} email={session.user.email ?? ''} />;
+  // Con Google, Supabase guarda el nombre y la foto de la cuenta en user_metadata
+  const meta = (session.user.user_metadata ?? {}) as { full_name?: string; name?: string; avatar_url?: string; picture?: string };
+  return (
+    <Workspace
+      key={session.user.id}
+      email={session.user.email ?? ''}
+      fullName={meta.full_name ?? meta.name ?? ''}
+      avatarUrl={meta.avatar_url ?? meta.picture ?? ''}
+    />
+  );
 }
 
-function Workspace({ email }: { email: string }) {
+function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: string; avatarUrl: string }) {
+  const greetingName = firstName(fullName) || displayName(email);
   // Conectores
   const [ghConnected, setGhConnected] = useState(false);
   const [ghUser, setGhUser] = useState<GithubUser | null>(null);
@@ -599,6 +613,8 @@ function Workspace({ email }: { email: string }) {
         onRename={(id, title) => void renameChat(id, title)}
         onNew={() => openChat(null)}
         email={email}
+        fullName={fullName}
+        avatarUrl={avatarUrl}
         ghConnected={ghConnected}
         onOpenConnectors={openConnectors}
         onSignOut={() => void supabase.auth.signOut()}
@@ -734,7 +750,7 @@ function Workspace({ email }: { email: string }) {
             <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
               <div className="min-h-full max-w-3xl mx-auto px-4 sm:px-6 pt-4 short:pt-1 pb-3 short:pb-2 flex flex-col gap-5 short:gap-3">
                 <div className="my-auto py-4 short:py-1">
-                  <Greeting name={displayName(email)} />
+                  <Greeting name={greetingName} />
                 </div>
                 <Suggestions
                   compact
@@ -750,7 +766,7 @@ function Workspace({ email }: { email: string }) {
         ) : (
           <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <div className="min-h-full max-w-3xl mx-auto px-6 flex flex-col justify-center gap-8 py-10">
-              <Greeting name={displayName(email)} />
+              <Greeting name={greetingName} />
               {composer}
               <Suggestions
                 onPick={(s) => {
