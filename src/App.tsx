@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { LoaderCircle, Menu, Plug, RefreshCw, X } from 'lucide-react';
+import { LoaderCircle, Menu, Plug, RefreshCw, SquarePen, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { api } from './lib/api';
 import { chatTitle, displayName } from './lib/format';
@@ -15,6 +15,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { PreviewPanel, type PreviewState } from './components/PreviewPanel';
 import { extractFiles, isHtmlFile, type CodeFile } from './lib/files';
 import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
+import { COARSE_POINTER, useMediaQuery } from './hooks/useMediaQuery';
 import {
   isFinished,
   repoId,
@@ -26,6 +27,18 @@ import {
 } from './types';
 
 const SIDEBAR_KEY = 'atlas.sidebar.expanded';
+/** Portátiles y tablets en horizontal: con la vista previa abierta, el menú lateral se pliega para dejar sitio al chat. */
+const PREVIEW_COLLAPSES_SIDEBAR = '(min-width: 1024px) and (max-width: 1599px)';
+/** Móvil o pantalla baja (móvil en horizontal): bienvenida compacta con el cuadro de texto abajo. */
+const COMPACT_WELCOME = '(max-width: 639px), (max-height: 540px)';
+
+/** Recorta un texto largo sin cortar palabras a la mitad y con puntos suspensivos. */
+function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[\s,.;:]+$/, '')}…`;
+}
 
 function taskIdFromUrl(): string | null {
   const match = /^#\/t\/([0-9a-f-]{36})$/i.exec(window.location.hash);
@@ -105,7 +118,11 @@ function Workspace({ email }: { email: string }) {
   // UI
   const [error, setError] = useState<string | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(() => localStorage.getItem(SIDEBAR_KEY) !== '0');
+  /** true si el menú lateral se plegó solo al abrir la vista previa (se restaura al cerrarla). */
+  const [sidebarAutoCollapsed, setSidebarAutoCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const compactWelcome = useMediaQuery(COMPACT_WELCOME);
+  const coarsePointer = useMediaQuery(COARSE_POINTER);
 
   const loadConnectors = useCallback(async () => {
     const data = await api.getConnectors();
@@ -163,9 +180,10 @@ function Workspace({ email }: { email: string }) {
       .finally(() => setOauthCompleting(false));
   }, [loadConnectors]);
 
+  // Solo se guarda la preferencia elegida por el usuario, no el plegado automático
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_KEY, sidebarExpanded ? '1' : '0');
-  }, [sidebarExpanded]);
+    if (!sidebarAutoCollapsed) localStorage.setItem(SIDEBAR_KEY, sidebarExpanded ? '1' : '0');
+  }, [sidebarExpanded, sidebarAutoCollapsed]);
 
   // Navegación con atrás/adelante del navegador
   useEffect(() => {
@@ -367,6 +385,21 @@ function Workspace({ email }: { email: string }) {
     if (entry) setPreview({ files, entry: entry.path });
   }, []);
 
+  // Con la vista previa abierta en pantallas medianas, el chat necesita el ancho del menú lateral
+  const previewOpen = preview !== null;
+  useEffect(() => {
+    if (previewOpen) {
+      if (sidebarExpanded && window.matchMedia(PREVIEW_COLLAPSES_SIDEBAR).matches) {
+        setSidebarExpanded(false);
+        setSidebarAutoCollapsed(true);
+      }
+    } else if (sidebarAutoCollapsed) {
+      setSidebarExpanded(true);
+      setSidebarAutoCollapsed(false);
+    }
+    // Solo reacciona a abrir/cerrar la vista previa
+  }, [previewOpen]);
+
   // Abre la vista previa sola cuando una respuesta recién terminada trae una página HTML
   // (no al abrir chats antiguos: solo respuestas que se vieron "en curso" en esta sesión)
   useEffect(() => {
@@ -400,15 +433,31 @@ function Workspace({ email }: { email: string }) {
       placeholder={
         convoBusy ? 'Atlas está respondiendo…' : inConversation ? 'Responde a Atlas' : 'Pídele algo a Atlas'
       }
-      autoFocus
+      // En móvil el foco automático abriría el teclado al cambiar de chat
+      autoFocus={!coarsePointer}
     />
+  );
+
+  // Cuadro de texto fijo abajo (conversación y bienvenida compacta), respetando la zona segura del iPhone
+  const bottomComposer = (
+    <div className="shrink-0 px-2.5 @xl:px-6 pt-1 pb-[max(0.625rem,env(safe-area-inset-bottom))] @xl:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="max-w-3xl mx-auto">
+        {composer}
+        <p className="text-center text-xs text-zinc-500 mt-2.5 max-sm:hidden [@media(max-height:620px)]:hidden">
+          Atlas puede cometer errores. Revisa las ramas antes de hacer merge.
+        </p>
+      </div>
+    </div>
   );
 
   return (
     <div className="h-full flex">
       <Sidebar
         expanded={sidebarExpanded}
-        onToggleExpanded={() => setSidebarExpanded((v) => !v)}
+        onToggleExpanded={() => {
+          setSidebarAutoCollapsed(false);
+          setSidebarExpanded((v) => !v);
+        }}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
         tasks={tasks}
@@ -424,49 +473,82 @@ function Workspace({ email }: { email: string }) {
         onSignOut={() => void supabase.auth.signOut()}
       />
 
-      <div className="flex-1 min-w-0 h-full flex flex-col">
-        <header className="h-16 shrink-0 flex items-center gap-2 px-3 sm:px-5">
+      {/* Columna principal: es un contenedor (@container) para que el chat y el cuadro de texto
+          se adapten al ancho disponible (menú lateral abierto o plegado, vista previa abierta…) */}
+      <div className="@container flex-1 min-w-0 h-full flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+        <header className="h-14 sm:h-16 shrink-0 flex items-center gap-1 sm:gap-2 px-2 sm:px-5">
           <button
+            type="button"
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:bg-white/[0.08]"
+            className="lg:hidden w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-zinc-300 hover:bg-white/[0.08]"
             aria-label="Abrir menú"
           >
             <Menu className="w-5 h-5" />
           </button>
           <button
+            type="button"
             onClick={() => openChat(null)}
-            className="flex items-center gap-2 px-2 h-10 rounded-xl hover:bg-white/[0.04] transition"
+            className={`shrink-0 flex items-center gap-2 px-2 h-10 rounded-xl hover:bg-white/[0.04] transition ${
+              currentChat ? 'max-sm:hidden' : ''
+            }`}
           >
-            <span className="text-xl font-medium tracking-tight text-zinc-100">Atlas</span>
+            <span className="text-lg sm:text-xl font-medium tracking-tight text-zinc-100">Atlas</span>
           </button>
           {currentChat && (
-            <span className="min-w-0 truncate text-sm text-zinc-400 max-sm:hidden" title={chatTitle(currentChat)}>
-              <span className="text-zinc-600 mr-2">/</span>
+            <span
+              className="min-w-0 flex-1 sm:flex-initial truncate px-1 sm:px-0 text-[15px] sm:text-sm font-medium sm:font-normal text-zinc-200 sm:text-zinc-400"
+              title={chatTitle(currentChat)}
+            >
+              <span className="text-zinc-600 mr-2 max-sm:hidden">/</span>
               {chatTitle(currentChat)}
             </span>
           )}
 
-          {!ghConnected && !tasksLoading && (
-            <button
-              onClick={openConnectors}
-              className="ml-auto h-9 px-3.5 rounded-full text-xs text-amber-200 bg-amber-400/10 hover:bg-amber-400/15 flex items-center gap-1.5 transition"
-            >
-              <Plug className="w-3.5 h-3.5" /> Conectar GitHub
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            {!ghConnected && !tasksLoading && (
+              <button
+                type="button"
+                onClick={openConnectors}
+                className="h-9 px-3.5 rounded-full text-xs text-amber-200 bg-amber-400/10 hover:bg-amber-400/15 flex items-center gap-1.5 whitespace-nowrap transition"
+              >
+                <Plug className="w-3.5 h-3.5 shrink-0" />
+                <span className={currentChat ? 'max-sm:hidden' : ''}>Conectar </span>GitHub
+              </button>
+            )}
+            {inConversation && (
+              <button
+                type="button"
+                onClick={() => openChat(null)}
+                className="lg:hidden w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:bg-white/[0.08]"
+                aria-label="Nuevo chat"
+                title="Nuevo chat"
+              >
+                <SquarePen className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </header>
 
         {error && (
-          <div className="px-4 animate-fade">
-            <div className="max-w-3xl mx-auto mb-2 rounded-2xl bg-[#3a1f1f] border border-red-400/20 px-4 py-2.5 flex items-center gap-3 text-sm text-red-100">
-              <span className="flex-1">{error}</span>
+          <div className="px-3 sm:px-4 animate-fade">
+            <div
+              role="alert"
+              className="max-w-3xl mx-auto mb-2 rounded-2xl bg-[#3a1f1f] border border-red-400/20 pl-4 pr-2 py-1.5 flex items-center gap-2 sm:gap-3 text-sm text-red-100"
+            >
+              <span className="flex-1 min-w-0 py-1 [overflow-wrap:anywhere]">{error}</span>
               <button
+                type="button"
                 onClick={() => void loadAll()}
-                className="flex items-center gap-1.5 text-xs font-medium text-red-100/90 hover:text-white"
+                className="h-9 px-2.5 shrink-0 rounded-full flex items-center gap-1.5 text-xs font-medium text-red-100/90 hover:text-white hover:bg-white/[0.06]"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Reintentar
+                <RefreshCw className="w-3.5 h-3.5" /> <span className="max-[359px]:hidden">Reintentar</span>
               </button>
-              <button onClick={() => setError(null)} aria-label="Cerrar aviso" className="text-red-100/70 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                aria-label="Cerrar aviso"
+                className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-red-100/70 hover:text-white hover:bg-white/[0.06]"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -475,7 +557,7 @@ function Workspace({ email }: { email: string }) {
 
         {inConversation ? (
           <>
-            <main className="flex-1 min-h-0 overflow-y-auto">
+            <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
               {chatTurns.length > 0 ? (
                 <ChatView key={selectedId ?? 'new'} turns={chatTurns} onPreview={openPreview} />
               ) : (
@@ -484,18 +566,29 @@ function Workspace({ email }: { email: string }) {
                 </div>
               )}
             </main>
-            <div className="shrink-0 px-3 sm:px-6 pb-3">
-              <div className="max-w-3xl mx-auto">
-                {composer}
-                <p className="text-center text-xs text-zinc-500 mt-2.5">
-                  Atlas puede cometer errores. Revisa las ramas antes de hacer merge.
-                </p>
+            {bottomComposer}
+          </>
+        ) : compactWelcome ? (
+          <>
+            <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div className="min-h-full max-w-3xl mx-auto px-4 sm:px-6 pt-4 short:pt-1 pb-3 short:pb-2 flex flex-col gap-5 short:gap-3">
+                <div className="my-auto py-4 short:py-1">
+                  <Greeting name={displayName(email)} />
+                </div>
+                <Suggestions
+                  compact
+                  onPick={(s) => {
+                    setMode(s.mode);
+                    setDraft(s.prompt);
+                  }}
+                />
               </div>
-            </div>
+            </main>
+            {bottomComposer}
           </>
         ) : (
-          <main className="flex-1 min-h-0 overflow-y-auto">
-            <div className="min-h-full max-w-3xl mx-auto px-4 sm:px-6 flex flex-col justify-center gap-8 py-10">
+          <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <div className="min-h-full max-w-3xl mx-auto px-6 flex flex-col justify-center gap-8 py-10">
               <Greeting name={displayName(email)} />
               {composer}
               <Suggestions
@@ -533,7 +626,7 @@ function Workspace({ email }: { email: string }) {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="¿Eliminar chat?"
-        message={`Se eliminará "${deleteTarget ? chatTitle(deleteTarget).slice(0, 80) : ''}" con todos sus mensajes. Esta acción no se puede deshacer.`}
+        message={`Se eliminará "${deleteTarget ? shorten(chatTitle(deleteTarget), 80) : ''}" con todos sus mensajes. Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar"
         busy={deleting}
         onConfirm={() => void confirmDelete()}

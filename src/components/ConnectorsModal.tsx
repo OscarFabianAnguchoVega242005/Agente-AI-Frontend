@@ -106,19 +106,19 @@ export function ConnectorsModal({
         placeholder="github_pat_… o ghp_…"
         className="w-full h-11 px-4 rounded-xl bg-[#1e1f20] border border-white/10 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-[#8ab4f8]/60 transition"
       />
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col-reverse items-stretch gap-2 min-[400px]:flex-row min-[400px]:items-center min-[400px]:justify-between">
         <a
           href="https://github.com/settings/tokens"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-[#8ab4f8] hover:underline flex items-center gap-1"
+          className="h-9 text-xs text-[#8ab4f8] hover:underline flex items-center justify-center gap-1 whitespace-nowrap"
         >
           Crear token <ExternalLink className="w-3 h-3" />
         </a>
         <button
           type="submit"
           disabled={working || !token.trim()}
-          className="h-9 px-4 rounded-full bg-white/10 text-zinc-100 text-sm font-medium hover:bg-white/15 disabled:opacity-40 flex items-center gap-2 transition"
+          className="h-11 min-[400px]:h-9 px-4 rounded-full bg-white/10 text-zinc-100 text-sm font-medium hover:bg-white/15 disabled:opacity-40 flex items-center justify-center gap-2 whitespace-nowrap transition"
         >
           {busy && <LoaderCircle className="w-4 h-4 animate-spin" />}
           Conectar con token
@@ -129,14 +129,18 @@ export function ConnectorsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="connectors-title"
-        className="relative w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-[#1e1f20] border border-white/10 shadow-2xl animate-pop"
+        className="relative w-full sm:max-w-lg max-h-[92dvh] sm:max-h-[88dvh] overflow-y-auto overscroll-contain rounded-t-[28px] sm:rounded-3xl bg-[#1e1f20] border border-white/10 border-b-0 sm:border-b shadow-2xl animate-sheet pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       >
-        <div className="flex items-start justify-between px-6 pt-6">
+        {/* Asa de la hoja inferior (solo móvil) */}
+        <div className="sm:hidden flex justify-center pt-2.5" aria-hidden="true">
+          <span className="w-10 h-1 rounded-full bg-white/15" />
+        </div>
+        <div className="flex items-start justify-between gap-3 px-5 sm:px-6 pt-3 sm:pt-6">
           <div>
             <h2 id="connectors-title" className="text-lg font-medium text-zinc-100">
               Conectores
@@ -146,20 +150,20 @@ export function ConnectorsModal({
           <button
             onClick={onClose}
             aria-label="Cerrar"
-            className="w-9 h-9 -mr-2 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06]"
+            className="w-10 h-10 -mr-2 -mt-1 shrink-0 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06]"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-3">
+        <div className="px-5 pt-5 pb-6 sm:p-6 space-y-3">
           {/* GitHub */}
           <div className="rounded-2xl border border-white/[0.08] bg-[#131314] p-4">
             <div className="flex items-center gap-3">
               {ghUser?.avatar_url ? (
-                <img src={ghUser.avatar_url} alt="" className="w-10 h-10 rounded-full border border-white/10" />
+                <img src={ghUser.avatar_url} alt="" className="w-10 h-10 shrink-0 rounded-full border border-white/10" />
               ) : (
-                <span className="w-10 h-10 rounded-full bg-white/[0.06] flex items-center justify-center">
+                <span className="w-10 h-10 shrink-0 rounded-full bg-white/[0.06] flex items-center justify-center">
                   <Github className="w-5 h-5 text-zinc-200" />
                 </span>
               )}
@@ -182,7 +186,7 @@ export function ConnectorsModal({
                 <button
                   onClick={() => void disconnect()}
                   disabled={working}
-                  className="h-8 px-3 rounded-full text-xs text-red-300 border border-red-400/20 hover:bg-red-400/10 disabled:opacity-50 transition"
+                  className="h-9 px-3 shrink-0 rounded-full text-xs text-red-300 border border-red-400/20 hover:bg-red-400/10 disabled:opacity-50 transition"
                 >
                   Desconectar
                 </button>
@@ -205,7 +209,8 @@ export function ConnectorsModal({
                     <button
                       type="button"
                       onClick={() => setShowToken(!showToken)}
-                      className="w-full flex items-center justify-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition"
+                      aria-expanded={showToken}
+                      className="w-full h-9 flex items-center justify-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition"
                     >
                       Usar un token en su lugar
                       <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showToken ? 'rotate-180' : ''}`} />
@@ -221,10 +226,10 @@ export function ConnectorsModal({
 
           {/* Gmail (próximamente) */}
           <div className="rounded-2xl border border-white/[0.05] bg-[#131314]/60 p-4 flex items-center gap-3 opacity-60">
-            <span className="w-10 h-10 rounded-full bg-white/[0.06] flex items-center justify-center">
+            <span className="w-10 h-10 shrink-0 rounded-full bg-white/[0.06] flex items-center justify-center">
               <Mail className="w-5 h-5 text-zinc-300" />
             </span>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <span className="text-sm font-medium text-zinc-200">Gmail</span>
               <p className="text-xs text-zinc-500 mt-0.5">Próximamente</p>
             </div>
@@ -241,8 +246,8 @@ export function ConnectorsModal({
             </p>
           )}
 
-          <p className="flex items-center gap-2 text-xs text-zinc-500 px-1 pt-1">
-            <ShieldCheck className="w-4 h-4 shrink-0" />
+          <p className="flex items-start gap-2 text-xs leading-relaxed text-zinc-500 px-1 pt-1">
+            <ShieldCheck className="w-4 h-4 shrink-0 mt-px" />
             Los tokens se cifran con AES-256-GCM en el servidor antes de guardarse.
           </p>
         </div>

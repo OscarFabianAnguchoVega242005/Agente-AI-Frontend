@@ -4,6 +4,9 @@ import remarkGfm from 'remark-gfm';
 import { Check, Copy, Download, Eye, FileCode2 } from 'lucide-react';
 import { downloadFile, parseCodeInfo } from '../lib/files';
 
+const codeBtn =
+  'h-8 min-w-8 px-2 rounded-lg flex items-center justify-center gap-1.5 hover:text-zinc-100 hover:bg-white/[0.06] transition';
+
 /** Abre la vista previa de la respuesta actual (lo provee cada turno del chat que trae HTML). */
 export const PreviewContext = createContext<((entry?: string) => void) | null>(null);
 
@@ -16,10 +19,12 @@ function CodeBlock({ language, path, code }: { language: string; path?: string; 
     setTimeout(() => setCopied(false), 1800);
   };
 
+  const isHtml = language.toLowerCase() === 'html' || /\.html?$/i.test(path ?? '');
+
   return (
     <div className="my-4 rounded-xl border border-white/10 bg-[#0d0d0e] overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-white/[0.03] border-b border-white/5 text-xs text-zinc-400">
-        <span className="font-mono truncate min-w-0">
+      <div className="flex items-center justify-between gap-2 pl-3 @md:pl-4 pr-1 py-1 bg-white/[0.03] border-b border-white/5 text-xs text-zinc-400">
+        <span className="font-mono truncate min-w-0" title={path}>
           {path ? (
             <>
               <FileCode2 className="inline w-3.5 h-3.5 mr-1.5 -mt-0.5 text-zinc-500" />
@@ -30,34 +35,45 @@ function CodeBlock({ language, path, code }: { language: string; path?: string; 
             language || 'código'
           )}
         </span>
-        <span className="flex items-center gap-3 shrink-0">
-          {openPreview && (language.toLowerCase() === 'html' || /\.html?$/i.test(path ?? '')) && (
+        {/* En pantallas estrechas los botones son solo icono (con etiqueta accesible) */}
+        <span className="flex items-center shrink-0">
+          {openPreview && isHtml && (
             <button
               type="button"
               onClick={() => openPreview(path)}
-              className="flex items-center gap-1.5 text-[#8ab4f8] hover:text-[#aecbfa] transition"
+              aria-label="Vista previa"
+              title="Vista previa"
+              className={`${codeBtn} text-[#8ab4f8] hover:text-[#aecbfa]`}
             >
               <Eye className="w-3.5 h-3.5" />
-              Vista previa
+              <span className="hidden @md:inline">Vista previa</span>
             </button>
           )}
           {path && (
             <button
               type="button"
               onClick={() => downloadFile(path, code)}
-              className="flex items-center gap-1.5 hover:text-zinc-100 transition"
+              aria-label={`Descargar ${path}`}
+              title="Descargar"
+              className={codeBtn}
             >
               <Download className="w-3.5 h-3.5" />
-              Descargar
+              <span className="hidden @md:inline">Descargar</span>
             </button>
           )}
-          <button type="button" onClick={copy} className="flex items-center gap-1.5 hover:text-zinc-100 transition">
+          <button
+            type="button"
+            onClick={copy}
+            aria-label={copied ? 'Copiado' : 'Copiar código'}
+            title="Copiar"
+            className={codeBtn}
+          >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? 'Copiado' : 'Copiar'}
+            <span className="hidden @md:inline">{copied ? 'Copiado' : 'Copiar'}</span>
           </button>
         </span>
       </div>
-      <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-zinc-200">
+      <pre className="p-3 @md:p-4 overflow-x-auto overscroll-x-contain text-[12.5px] @md:text-[13px] leading-relaxed font-mono text-zinc-200">
         <code>{code}</code>
       </pre>
     </div>
@@ -91,7 +107,7 @@ const components: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-[#8ab4f8] underline underline-offset-2 decoration-[#8ab4f8]/40 hover:decoration-[#8ab4f8]"
+      className="text-[#8ab4f8] underline underline-offset-2 decoration-[#8ab4f8]/40 hover:decoration-[#8ab4f8] [overflow-wrap:anywhere]"
     >
       {children}
     </a>
@@ -101,8 +117,8 @@ const components: Components = {
   h3: ({ children }) => <h3 className="text-base font-semibold mt-5 mb-2 text-zinc-50">{children}</h3>,
   h4: ({ children }) => <h4 className="font-semibold mt-4 mb-2 text-zinc-100">{children}</h4>,
   p: ({ children }) => <p className="my-3 leading-7">{children}</p>,
-  ul: ({ children }) => <ul className="my-3 pl-6 list-disc space-y-1.5 marker:text-zinc-500">{children}</ul>,
-  ol: ({ children }) => <ol className="my-3 pl-6 list-decimal space-y-1.5 marker:text-zinc-500">{children}</ol>,
+  ul: ({ children }) => <ul className="my-3 pl-5 @md:pl-6 list-disc space-y-1.5 marker:text-zinc-500">{children}</ul>,
+  ol: ({ children }) => <ol className="my-3 pl-5 @md:pl-6 list-decimal space-y-1.5 marker:text-zinc-500">{children}</ol>,
   li: ({ children }) => <li className="leading-7 pl-1">{children}</li>,
   blockquote: ({ children }) => (
     <blockquote className="my-4 border-l-2 border-[#9B72F2]/60 pl-4 text-zinc-300">{children}</blockquote>
@@ -110,15 +126,22 @@ const components: Components = {
   hr: () => <hr className="my-6 border-white/10" />,
   strong: ({ children }) => <strong className="font-semibold text-zinc-50">{children}</strong>,
   table: ({ children }) => (
-    <div className="my-4 overflow-x-auto rounded-xl border border-white/10">
-      <table className="w-full text-sm border-collapse">{children}</table>
+    <div className="my-4 overflow-x-auto overscroll-x-contain rounded-xl border border-white/10">
+      <table className="w-full text-sm border-collapse [&_tr:last-child>td]:border-b-0">{children}</table>
     </div>
   ),
   thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
   th: ({ children }) => (
-    <th className="text-left font-semibold px-4 py-2.5 border-b border-white/10 text-zinc-100">{children}</th>
+    <th className="text-left align-bottom font-semibold px-3 @md:px-4 py-2.5 border-b border-white/10 text-zinc-100">
+      {children}
+    </th>
   ),
-  td: ({ children }) => <td className="px-4 py-2.5 border-b border-white/5 align-top">{children}</td>,
+  // Ancho mínimo por columna: en móvil la tabla se desplaza en horizontal en vez de aplastar el texto
+  td: ({ children }) => (
+    <td className="px-3 @md:px-4 py-2.5 border-b border-white/5 align-top min-w-[6.5rem] break-words">
+      {children}
+    </td>
+  ),
 };
 
 export function Markdown({ children }: { children: string }) {

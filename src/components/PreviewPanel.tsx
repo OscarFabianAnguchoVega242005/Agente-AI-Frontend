@@ -78,21 +78,34 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
   return (
     <section
       aria-label="Vista previa"
-      className="fixed inset-0 z-50 flex flex-col bg-[#131314] lg:static lg:z-auto lg:w-[48%] lg:min-w-[420px] lg:border-l lg:border-white/[0.06] animate-fade"
+      className="@container fixed inset-0 z-50 flex flex-col bg-[#131314] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:p-0 lg:static lg:z-auto lg:w-[48%] lg:min-w-[400px] lg:max-w-[960px] lg:border-l lg:border-white/[0.06] animate-fade"
     >
       {/* Barra superior */}
-      <div className="h-16 shrink-0 flex items-center gap-2 px-3 border-b border-white/[0.06]">
-        <div className="flex items-center gap-1 p-1 rounded-full bg-white/[0.04]">
-          <button type="button" onClick={() => setTab('preview')} className={btn(tab === 'preview')}>
-            <Eye className="w-3.5 h-3.5" /> Vista previa
+      <div className="h-14 lg:h-16 shrink-0 flex items-center gap-1.5 @md:gap-2 px-2 @md:px-3 border-b border-white/[0.06]">
+        <div className="flex items-center gap-1 p-1 rounded-full bg-white/[0.04] shrink-0">
+          <button
+            type="button"
+            onClick={() => setTab('preview')}
+            aria-label="Vista previa"
+            aria-pressed={tab === 'preview'}
+            className={btn(tab === 'preview')}
+          >
+            <Eye className="w-3.5 h-3.5" /> <span className="@max-[22rem]:hidden">Vista previa</span>
           </button>
-          <button type="button" onClick={() => setTab('code')} className={btn(tab === 'code')}>
-            <Code2 className="w-3.5 h-3.5" /> Código
+          <button
+            type="button"
+            onClick={() => setTab('code')}
+            aria-label="Código"
+            aria-pressed={tab === 'code'}
+            className={btn(tab === 'code')}
+          >
+            <Code2 className="w-3.5 h-3.5" /> <span className="@max-[22rem]:hidden">Código</span>
           </button>
         </div>
 
+        {/* Simular tamaños solo tiene sentido si el panel es más ancho que un móvil */}
         {tab === 'preview' && (
-          <div className="hidden sm:flex items-center gap-0.5 ml-1">
+          <div className="hidden @lg:flex items-center gap-0.5 ml-1">
             {(
               [
                 ['desktop', Monitor, 'Escritorio'],
@@ -113,23 +126,26 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
                 <Icon className="w-4 h-4" />
               </button>
             ))}
+          </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-0.5 @md:gap-1">
+          {tab === 'preview' && (
             <button
               type="button"
               title="Recargar"
               aria-label="Recargar"
               onClick={() => setReloadKey((k) => k + 1)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-zinc-200 transition"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition"
             >
               <RotateCw className="w-4 h-4" />
             </button>
-          </div>
-        )}
-
-        <div className="ml-auto flex items-center gap-1">
+          )}
           {preview.files.length > 1 && (
             <button
               type="button"
               title="Descargar todo (.zip)"
+              aria-label="Descargar todo (.zip)"
               onClick={() => downloadZip(preview.files)}
               className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition"
             >
@@ -149,7 +165,7 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
 
       {/* Selector de página o archivo */}
       {(tab === 'preview' ? htmlFiles.length > 1 : preview.files.length > 1) && (
-        <div className="shrink-0 flex gap-1 px-3 py-2 overflow-x-auto border-b border-white/[0.06]">
+        <div className="shrink-0 flex gap-1 px-2 @md:px-3 py-2 overflow-x-auto overscroll-x-contain no-scrollbar border-b border-white/[0.06]">
           {(tab === 'preview' ? htmlFiles : preview.files).map((f) => {
             const active = tab === 'preview' ? f.path === preview.entry : f.path === shownCode?.path;
             return (
@@ -157,7 +173,7 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
                 key={f.path}
                 type="button"
                 onClick={() => (tab === 'preview' ? onChangeEntry(f.path) : setCodeFile(f.path))}
-                className={`shrink-0 h-7 px-3 rounded-full text-xs font-mono transition ${
+                className={`shrink-0 h-8 px-3 rounded-full text-xs font-mono transition ${
                   active ? 'bg-[#1f3760] text-[#d3e3fd]' : 'text-zinc-400 hover:bg-white/[0.06]'
                 }`}
               >
@@ -169,7 +185,7 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
       )}
 
       {/* Contenido */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
         {tab === 'preview' ? (
           <div className="h-full w-full flex justify-center bg-[#0d0d0e] p-0 sm:p-3">
             <iframe
@@ -184,14 +200,15 @@ export function PreviewPanel({ preview, onClose, onChangeEntry }: Props) {
             />
           </div>
         ) : shownCode ? (
-          <div className="p-4">
+          <div className="p-3 @md:p-4">
             <div className="flex justify-end mb-2">
               <button
                 type="button"
                 onClick={() => downloadFile(shownCode.path, shownCode.content)}
-                className="h-8 px-3 rounded-full flex items-center gap-1.5 text-xs text-zinc-300 hover:bg-white/[0.06]"
+                className="h-9 max-w-full px-3 rounded-full flex items-center gap-1.5 text-xs text-zinc-300 hover:bg-white/[0.06]"
               >
-                <Download className="w-3.5 h-3.5" /> Descargar {shownCode.path.split('/').pop()}
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Descargar {shownCode.path.split('/').pop()}</span>
               </button>
             </div>
             <Markdown>{`\`\`\`\`${shownCode.language}:${shownCode.path}\n${shownCode.content}\n\`\`\`\``}</Markdown>

@@ -2,8 +2,15 @@
 <html lang="es" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- resizes-content: en Android el teclado reduce la ventana y el cuadro de texto queda siempre visible -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#131314" />
+    <meta name="color-scheme" content="dark" />
+    <!-- Evita que iOS convierta números (commits, horas) en enlaces de teléfono -->
+    <meta name="format-detection" content="telephone=no" />
     <title>Atlas</title>
     <link
       rel="icon"

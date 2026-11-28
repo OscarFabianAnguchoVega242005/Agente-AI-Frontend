@@ -183,6 +183,21 @@ export const PREVIEW_NAVIGATE_MESSAGE = 'atlas-preview-navigate';
  */
 const PREVIEW_NAV_SCRIPT = `<script>
 (function () {
+  // Sin allow-same-origin, localStorage y sessionStorage lanzan un error al usarse y la página
+  // generada (juegos con récords, listas de tareas…) se rompe: se sustituyen por almacenamiento en memoria.
+  ['localStorage', 'sessionStorage'].forEach(function (name) {
+    try { window[name].getItem('__atlas'); return; } catch (err) {}
+    var data = {};
+    var store = {
+      getItem: function (k) { k = String(k); return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function (k, v) { data[String(k)] = String(v); },
+      removeItem: function (k) { delete data[String(k)]; },
+      clear: function () { data = {}; },
+      key: function (i) { var keys = Object.keys(data); return i >= 0 && i < keys.length ? keys[i] : null; }
+    };
+    Object.defineProperty(store, 'length', { get: function () { return Object.keys(data).length; } });
+    try { Object.defineProperty(window, name, { value: store, configurable: true }); } catch (err) {}
+  });
   function scrollToHash(hash) {
     var id = decodeURIComponent(hash.replace(/^#/, ''));
     if (!id) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
