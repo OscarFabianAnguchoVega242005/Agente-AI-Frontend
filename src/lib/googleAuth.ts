@@ -46,7 +46,7 @@ function randomBase64Url(bytes: number): string {
 }
 
 /** Nonce de un solo uso: Google recibe su SHA-256 y Supabase comprueba que coincide con el original. */
-async function createNonce(): Promise<{ raw: string; hashed: string }> {
+export async function createNonce(): Promise<{ raw: string; hashed: string }> {
   const raw = randomBase64Url(32);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
   const hashed = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');

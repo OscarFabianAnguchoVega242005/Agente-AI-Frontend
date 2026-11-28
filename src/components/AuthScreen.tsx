@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Eye,
   EyeOff,
@@ -14,6 +14,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../lib/supabase';
 import { GoogleAuthError, signInWithGooglePopup } from '../lib/googleAuth';
 import { AtlasLogo } from './AtlasLogo';
 import { CONTACT_EMAIL } from './LegalPage';
+import { GoogleOfficialButton } from './GoogleOfficialButton';
 
 /** Logo de Google para el botón de acceso (según las pautas de marca de "Acceder con Google"). */
 function GoogleLogo({ className = 'w-5 h-5' }: { className?: string }) {
@@ -177,6 +178,8 @@ export function AuthScreen() {
   const [notice, setNotice] = useState<string | null>(oauthErrorFromUrl);
   const [showEmail, setShowEmail] = useState(false);
   const [googleState, setGoogleState] = useState<GoogleState>('idle');
+  /** Acceso de respaldo con el botón oficial de Google (0 = oculto; al cambiar, se prepara un intento nuevo) */
+  const [altGoogle, setAltGoogle] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,7 +220,11 @@ export function AuthScreen() {
       .catch((err: unknown) => {
         setGoogleState('idle');
         if (err instanceof GoogleAuthError) {
-          if (err.code === 'closed' || err.code === 'cancelled') return; // lo cerró el usuario
+          if (err.code === 'cancelled') return; // canceló en Google
+          // La ventana se cerró sin terminar (p. ej. Google mostró un error de configuración): se ofrece el
+          // botón oficial de Google, que no depende de la URI de redirección
+          setAltGoogle((k) => k || 1);
+          if (err.code === 'closed') return;
           setNotice(
             err.code === 'state'
               ? 'No se pudo verificar la respuesta de Google. Vuelve a intentarlo.'
@@ -233,6 +240,22 @@ export function AuthScreen() {
         );
       });
   };
+
+  /** Token del botón oficial de Google → sesión en Supabase. */
+  const finishOfficial = useCallback((idToken: string, nonce: string) => {
+    setNotice(null);
+    setGoogleState('signing');
+    void supabase.auth.signInWithIdToken({ provider: 'google', token: idToken, nonce }).then(({ error }) => {
+      if (!error) return; // App detecta la sesión y abre Atlas
+      setGoogleState('idle');
+      setNotice(
+        /signups? not allowed|signup.*disabled/i.test(error.message)
+          ? 'Esta cuenta de Google no tiene acceso a Atlas.'
+          : `No se pudo entrar con Google: ${error.message}`
+      );
+      setAltGoogle((k) => k + 1); // nonce nuevo para el siguiente intento
+    });
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain">
@@ -267,6 +290,15 @@ export function AuthScreen() {
             disabled={!googleOn}
             onClick={continueWithGoogle}
           />
+
+          {altGoogle > 0 && googleOn && (
+            <div className="mt-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 space-y-2.5 animate-fade">
+              <p className="text-xs leading-relaxed text-center text-zinc-400">
+                ¿Google mostró un error? Prueba con su acceso oficial:
+              </p>
+              <GoogleOfficialButton key={altGoogle} onCredential={finishOfficial} onError={setNotice} />
+            </div>
+          )}
 
           {googlePending && (
             <div className="mt-5 space-y-3">
