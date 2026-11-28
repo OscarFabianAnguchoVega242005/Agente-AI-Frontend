@@ -4,6 +4,7 @@ import {
   EyeOff,
   GitBranch,
   Globe,
+  Mail,
   LoaderCircle,
   Mic,
   ShieldCheck,
@@ -111,6 +112,7 @@ const FEATURES: Array<{ icon: LucideIcon; text: string }> = [
   { icon: GitBranch, text: 'Programa en tus repositorios de GitHub: sube los cambios a una rama y abre un Pull Request.' },
   { icon: ShieldCheck, text: 'Revisa la seguridad de tu código: credenciales expuestas y vulnerabilidades.' },
   { icon: Globe, text: 'Investiga en internet y analiza imágenes, PDF y archivos de código.' },
+  { icon: Mail, text: 'Si conectas Gmail, resume tus correos y prepara borradores de respuesta (nunca envía por ti).' },
   { icon: Mic, text: 'Le hablas por voz y puede leerte sus respuestas.' },
 ];
 

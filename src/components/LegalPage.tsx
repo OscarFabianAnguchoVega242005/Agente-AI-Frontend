@@ -4,7 +4,7 @@ import { AtlasLogo } from './AtlasLogo';
 
 /** Correo de contacto público de Atlas (privacidad, términos y borrado de datos). */
 export const CONTACT_EMAIL = 'celltroll2005@gmail.com';
-const UPDATED = '27 de noviembre de 2026';
+const UPDATED = '28 de noviembre de 2026';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -37,8 +37,8 @@ function Privacy() {
     <>
       <p className="text-[15px] leading-7 text-zinc-300">
         Atlas es un agente de inteligencia artificial para programar y revisar la seguridad del código: trabaja sobre tus
-        repositorios de GitHub, investiga en internet y analiza los archivos que le envías. Esta política explica qué datos
-        usa, para qué y cómo puedes borrarlos.
+        repositorios de GitHub, investiga en internet, analiza los archivos que le envías y, si lo conectas, te ayuda con
+        tu correo de Gmail. Esta política explica qué datos usa, para qué y cómo puedes borrarlos.
       </p>
 
       <Section title="Datos que usamos">
@@ -47,7 +47,8 @@ function Privacy() {
             <>
               <strong className="text-zinc-100">De tu cuenta de Google</strong>, al iniciar sesión: tu nombre, tu correo
               electrónico y tu foto de perfil. Sirven para crear tu cuenta, identificarte y mostrar tu nombre y foto en
-              Atlas. Atlas no accede a Gmail, Drive, Calendar, tus contactos ni a ningún otro dato de Google.
+              Atlas. Atlas solo accede a Gmail si lo conectas tú (ver más abajo) y nunca accede a Drive, Calendar, tus
+              contactos ni a otros datos de Google.
             </>,
             <>
               <strong className="text-zinc-100">Lo que envías a Atlas</strong>: tus mensajes, las respuestas, el registro
@@ -62,6 +63,13 @@ function Privacy() {
               <strong className="text-zinc-100">GitHub, si lo conectas</strong>: tu usuario, tu foto y un token de acceso,
               guardado cifrado (AES-256-GCM). Con él, Atlas lee los repositorios que eliges y, cuando se lo pides, sube
               cambios en ramas propias (agent/…) y abre Pull Requests. Nunca escribe en tu rama principal.
+            </>,
+            <>
+              <strong className="text-zinc-100">Gmail, si lo conectas</strong> (botón «Conectar con Google» en Conectores):
+              con tu permiso, Atlas busca y lee tus correos y crea borradores, solo cuando se lo pides en un chat. Nunca
+              envía, borra ni modifica correos: los borradores los revisas y envías tú. El permiso se guarda cifrado
+              (AES-256-GCM). Lo que Atlas lee de un correo se usa solo para responderte: se envía a la API de Gemini para
+              generar la respuesta y queda en el registro de herramientas de ese chat hasta que lo borras.
             </>,
             <>
               <strong className="text-zinc-100">Notas de proyecto</strong>: un resumen del stack y la arquitectura de cada
@@ -80,7 +88,8 @@ function Privacy() {
           items={[
             <>
               <strong className="text-zinc-100">Google Gemini API</strong>: genera las respuestas a partir de tus mensajes y
-              archivos, transcribe el audio y hace las búsquedas en internet. Atlas usa el nivel gratuito de esta API: según
+              archivos (y de los correos que Atlas lee, si conectas Gmail), transcribe el audio y hace las búsquedas en
+              internet. Atlas usa el nivel gratuito de esta API: según
               las{' '}
               <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer" className={link}>
                 condiciones de Google
@@ -97,12 +106,16 @@ function Privacy() {
               repositorios.
             </>,
             <>
+              <strong className="text-zinc-100">Gmail</strong>: solo si lo conectas, para leer tus correos y crear los
+              borradores que pides.
+            </>,
+            <>
               <strong className="text-zinc-100">Vercel y Render</strong>: alojan la web y el servidor de Atlas.
             </>,
           ]}
         />
         <p>
-          El uso que hace Atlas de la información recibida de las APIs de Google cumple la{' '}
+          El uso que hace Atlas de la información de tu perfil de Google cumple la{' '}
           <a
             href="https://developers.google.com/terms/api-services-user-data-policy"
             target="_blank"
@@ -111,7 +124,10 @@ function Privacy() {
           >
             Política de datos de usuario de los servicios de API de Google
           </a>
-          , incluidos los requisitos de uso limitado.
+          , incluidos los requisitos de uso limitado. Los correos de Gmail solo se usan para responder lo que pides en
+          Atlas: no se venden ni se usan para publicidad. Ten en cuenta que, mientras Atlas use el nivel gratuito de Gemini,
+          Google puede usar el contenido que Atlas le envía (incluidos esos correos) para mejorar sus productos: conecta
+          Gmail solo si estás de acuerdo.
         </p>
       </Section>
 
@@ -120,6 +136,7 @@ function Privacy() {
           items={[
             'Tus chats y sus archivos se guardan hasta que los borras. Al eliminar un chat se borran sus mensajes, el registro de herramientas y los archivos adjuntos.',
             'Al desconectar GitHub en Conectores se borra su token.',
+            'Al desconectar Gmail en Conectores se borra el permiso guardado y se retira también de tu cuenta de Google (también puedes retirarlo desde allí, en los permisos de tu cuenta).',
             <>Para eliminar tu cuenta y todos tus datos, escribe a {mail}; se borran en un plazo de 30 días.</>,
           ]}
         />
@@ -127,7 +144,8 @@ function Privacy() {
 
       <Section title="Seguridad">
         <p>
-          Todo el tráfico va cifrado (HTTPS). Los tokens de GitHub se guardan cifrados, los archivos adjuntos están en un
+          Todo el tráfico va cifrado (HTTPS). Los tokens de GitHub y el permiso de Gmail se guardan cifrados, los archivos
+          adjuntos están en un
           almacenamiento privado al que solo se accede con enlaces temporales y cada usuario solo puede ver sus propios
           datos. En el navegador se guarda tu sesión y alguna preferencia (como el estado del menú); Atlas no usa cookies
           de seguimiento.
@@ -153,7 +171,7 @@ function Terms() {
     <>
       <p className="text-[15px] leading-7 text-zinc-300">
         Al usar Atlas aceptas estas condiciones. Atlas es un agente de inteligencia artificial que programa, revisa la
-        seguridad del código e investiga por ti a partir de lo que le pides.
+        seguridad del código, investiga y, si conectas Gmail, te ayuda con tu correo a partir de lo que le pides.
       </p>
 
       <Section title="Tu cuenta">
@@ -177,6 +195,13 @@ function Terms() {
         <p>
           Atlas sube sus cambios en ramas propias (agent/…) y abre Pull Requests; nunca escribe en tu rama principal. Revisa
           siempre los cambios antes de fusionarlos: la decisión y la responsabilidad de aplicarlos son tuyas.
+        </p>
+      </Section>
+
+      <Section title="Lo que hace Atlas con tu Gmail">
+        <p>
+          Si conectas Gmail, Atlas solo lee correos y crea borradores cuando se lo pides; nunca envía correos por ti. Revisa
+          los borradores antes de enviarlos: lo que envíes desde tu cuenta es responsabilidad tuya.
         </p>
       </Section>
 
