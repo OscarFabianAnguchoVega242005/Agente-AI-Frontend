@@ -1,4 +1,4 @@
-import { FolderTree, ShieldCheck, Sparkles, KeyRound, type LucideIcon } from 'lucide-react';
+import { FolderTree, Mail, ShieldCheck, Sparkles, KeyRound, type LucideIcon } from 'lucide-react';
 import type { AgentMode } from '../types';
 
 export interface Suggestion {
@@ -39,6 +39,19 @@ const SUGGESTIONS: Suggestion[] = [
   },
 ];
 
+/** Con Gmail conectado, la última sugerencia pasa a ser de correo (se mantienen 4 por el diseño). */
+const GMAIL_SUGGESTION: Suggestion = {
+  title: 'Resume mis correos sin leer',
+  prompt:
+    'Revisa mis correos sin leer de los últimos 2 días y hazme un resumen: qué es importante, qué requiere una respuesta mía y qué puedo ignorar.',
+  mode: 'general',
+  icon: Mail,
+};
+
+function suggestionsFor(gmail: boolean): Suggestion[] {
+  return gmail ? [...SUGGESTIONS.slice(0, 3), GMAIL_SUGGESTION] : SUGGESTIONS;
+}
+
 export function Greeting({ name }: { name: string }) {
   return (
     <div className="animate-rise">
@@ -57,11 +70,21 @@ export function Greeting({ name }: { name: string }) {
  * - Normal (escritorio y tablets): 2 columnas con icono a la izquierda.
  * - Compacta (móvil y pantallas bajas): tarjetas pequeñas en 2 columnas, o 4 en horizontal.
  */
-export function Suggestions({ onPick, compact = false }: { onPick: (s: Suggestion) => void; compact?: boolean }) {
+export function Suggestions({
+  onPick,
+  compact = false,
+  gmail = false,
+}: {
+  onPick: (s: Suggestion) => void;
+  compact?: boolean;
+  /** Gmail conectado: incluye una sugerencia de correo */
+  gmail?: boolean;
+}) {
+  const list = suggestionsFor(gmail);
   if (compact) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 animate-rise [animation-delay:80ms]">
-        {SUGGESTIONS.map((s) => {
+        {list.map((s) => {
           const Icon = s.icon;
           return (
             <button
@@ -85,7 +108,7 @@ export function Suggestions({ onPick, compact = false }: { onPick: (s: Suggestio
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-rise [animation-delay:80ms]">
-      {SUGGESTIONS.map((s) => {
+      {list.map((s) => {
         const Icon = s.icon;
         return (
           <button

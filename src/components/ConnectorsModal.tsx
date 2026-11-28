@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ChevronDown, ExternalLink, Github, LoaderCircle, Lock, Mail, ShieldCheck, X } from 'lucide-react';
+import { Check, ChevronDown, ExternalLink, Github, LoaderCircle, Mail, ShieldCheck, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { startGithubOAuth } from '../lib/githubOAuth';
-import type { GithubUser, RepoItem } from '../types';
+import { GmailConnectError, connectGmail } from '../lib/gmailOAuth';
+import { GoogleLogo } from './GoogleLogo';
+import type { ConnectorsResponse, GithubUser, GmailConnector, RepoItem } from '../types';
 
 export type Notice = { type: 'error' | 'ok' | 'info'; text: string } | null;
 
@@ -13,12 +15,34 @@ interface Props {
   oauthAvailable: boolean;
   ghUser: GithubUser | null;
   repos: RepoItem[];
-  onChanged: () => Promise<void>;
+  gmail: GmailConnector;
+  /** Vuelve a leer los conectores del servidor */
+  onChanged: () => Promise<ConnectorsResponse>;
   notice: Notice;
   onNotice: (notice: Notice) => void;
   /** true mientras se procesa la vuelta desde GitHub */
   completing: boolean;
 }
+
+/** Etiqueta "Conectado"; en pantallas muy estrechas, un punto verde para no chocar con "Desconectar". */
+function ConnectedBadge() {
+  return (
+    <>
+      <span className="max-[379px]:hidden text-[11px] px-2 py-0.5 rounded-full bg-emerald-400/10 text-emerald-300 whitespace-nowrap">
+        Conectado
+      </span>
+      <span
+        role="img"
+        aria-label="Conectado"
+        title="Conectado"
+        className="min-[380px]:hidden w-2 h-2 shrink-0 rounded-full bg-emerald-400"
+      />
+    </>
+  );
+}
+
+/** idle → waiting (ventana de Google abierta) → connecting (canjeando el permiso en el servidor) */
+type GmailPhase = 'idle' | 'waiting' | 'connecting';
 
 export function ConnectorsModal({
   open,
@@ -27,6 +51,7 @@ export function ConnectorsModal({
   oauthAvailable,
   ghUser,
   repos,
+  gmail,
   onChanged,
   notice,
   onNotice,
@@ -35,6 +60,8 @@ export function ConnectorsModal({
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  const [gmailPhase, setGmailPhase] = useState<GmailPhase>('idle');
+  const gmailBusy = gmailPhase !== 'idle';
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +115,47 @@ export function ConnectorsModal({
       onNotice({ type: 'error', text: (err as Error).message });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const connectGmailNow = async () => {
+    setGmailPhase('waiting');
+    onNotice(null);
+    try {
+      const result = await connectGmail({ onAuthorized: () => setGmailPhase('connecting') });
+      if (!result) return; // redirección completa: la página va a Google
+      await onChanged().catch(() => undefined);
+      onNotice(result.warning ? { type: 'info', text: result.warning } : { type: 'ok', text: `Gmail conectado: ${result.email}` });
+    } catch (err) {
+      if (err instanceof GmailConnectError && err.code === 'closed') {
+        // La ventana se cerró sin avisar: puede que terminara la conexión por su cuenta
+        const data = await onChanged().catch(() => null);
+        onNotice(
+          data?.gmail?.connected
+            ? { type: 'ok', text: `Gmail conectado: ${data.gmail.email ?? ''}` }
+            : { type: 'info', text: 'No se completó la conexión con Gmail. Si Google mostró un error, vuelve a intentarlo.' }
+        );
+      } else if (err instanceof GmailConnectError && err.code === 'cancelled') {
+        onNotice({ type: 'info', text: err.message });
+      } else {
+        onNotice({ type: 'error', text: (err as Error).message });
+      }
+    } finally {
+      setGmailPhase('idle');
+    }
+  };
+
+  const disconnectGmail = async () => {
+    setGmailPhase('connecting');
+    onNotice(null);
+    try {
+      await api.disconnect('gmail');
+      await onChanged().catch(() => undefined);
+      onNotice({ type: 'ok', text: 'Gmail desconectado. Atlas ya no puede leer tus correos.' });
+    } catch (err) {
+      onNotice({ type: 'error', text: (err as Error).message });
+    } finally {
+      setGmailPhase('idle');
     }
   };
 
@@ -170,11 +238,7 @@ export function ConnectorsModal({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-zinc-100">GitHub</span>
-                  {ghConnected && (
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-400/10 text-emerald-300">
-                      Conectado
-                    </span>
-                  )}
+                  {ghConnected && <ConnectedBadge />}
                 </div>
                 <p className="text-xs text-zinc-400 truncate mt-0.5">
                   {ghConnected
@@ -224,16 +288,90 @@ export function ConnectorsModal({
             )}
           </div>
 
-          {/* Gmail (próximamente) */}
-          <div className="rounded-2xl border border-white/[0.05] bg-[#131314]/60 p-4 flex items-center gap-3 opacity-60">
-            <span className="w-10 h-10 shrink-0 rounded-full bg-white/[0.06] flex items-center justify-center">
-              <Mail className="w-5 h-5 text-zinc-300" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <span className="text-sm font-medium text-zinc-200">Gmail</span>
-              <p className="text-xs text-zinc-500 mt-0.5">Próximamente</p>
+          {/* Gmail */}
+          <div className={`rounded-2xl border border-white/[0.08] bg-[#131314] p-4 ${gmail.available || gmail.connected ? '' : 'opacity-70'}`}>
+            <div className="flex items-center gap-3">
+              {gmail.connected && gmail.avatar_url ? (
+                <img
+                  src={gmail.avatar_url}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="w-10 h-10 shrink-0 rounded-full border border-white/10"
+                />
+              ) : (
+                <span className="w-10 h-10 shrink-0 rounded-full bg-white/[0.06] flex items-center justify-center">
+                  <Mail className="w-5 h-5 text-zinc-200" />
+                </span>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-zinc-100">Gmail</span>
+                  {gmail.connected && <ConnectedBadge />}
+                </div>
+                <p className="text-xs text-zinc-400 truncate mt-0.5">
+                  {gmail.connected
+                    ? gmail.email
+                    : gmail.available
+                      ? 'Lee tus correos y prepara borradores'
+                      : 'Pendiente de configurar en el servidor'}
+                </p>
+              </div>
+              {gmail.connected && (
+                <button
+                  onClick={() => void disconnectGmail()}
+                  disabled={gmailBusy}
+                  className="h-9 px-3 shrink-0 rounded-full text-xs text-red-300 border border-red-400/20 hover:bg-red-400/10 disabled:opacity-50 flex items-center gap-1.5 transition"
+                >
+                  {gmailBusy && <LoaderCircle className="w-3.5 h-3.5 animate-spin" />}
+                  Desconectar
+                </button>
+              )}
             </div>
-            <Lock className="w-4 h-4 text-zinc-500" />
+
+            {gmail.connected ? (
+              <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+                Atlas lee tus correos y crea borradores cuando se lo pides. Nunca envía correos.
+              </p>
+            ) : (
+              gmail.available && (
+                <div className="mt-4 space-y-3">
+                  <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-400">
+                    <li className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-300/80" />
+                      Busca, lee y resume tus correos
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-300/80" />
+                      Prepara borradores de respuesta que tú revisas
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-300/80" />
+                      Nunca envía correos por ti
+                    </li>
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => void connectGmailNow()}
+                    disabled={gmailBusy}
+                    aria-busy={gmailBusy}
+                    className="w-full h-11 px-4 rounded-full bg-zinc-100 hover:bg-white text-zinc-900 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-70 transition active:scale-[0.99]"
+                  >
+                    {gmailBusy ? (
+                      <LoaderCircle className="w-4 h-4 shrink-0 animate-spin" />
+                    ) : (
+                      <GoogleLogo className="w-4 h-4 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {gmailPhase === 'waiting'
+                        ? 'Continúa en la ventana de Google…'
+                        : gmailPhase === 'connecting'
+                          ? 'Conectando Gmail…'
+                          : 'Conectar con Google'}
+                    </span>
+                  </button>
+                </div>
+              )
+            )}
           </div>
 
           {notice && (

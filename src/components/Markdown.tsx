@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, Copy, Download, Eye, FileCode2 } from 'lucide-react';
+import { Check, Copy, Download, Eye, FileCode2, ImageIcon } from 'lucide-react';
 import { downloadFile, parseCodeInfo } from '../lib/files';
 
 const codeBtn =
@@ -112,6 +112,25 @@ const components: Components = {
       {children}
     </a>
   ),
+  // Las imágenes externas no se cargan solas: una imagen remota puede filtrar datos en su URL (p. ej. si un
+  // correo con instrucciones maliciosas consiguiera que Atlas la escribiera). Se muestran como enlace.
+  img: ({ src, alt }) => {
+    const href = typeof src === 'string' && /^https?:\/\//i.test(src) ? src : '';
+    const label = alt?.trim() || 'Imagen';
+    return href ? (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="inline-flex items-center gap-1 text-[#8ab4f8] underline underline-offset-2 decoration-[#8ab4f8]/40 hover:decoration-[#8ab4f8] [overflow-wrap:anywhere]"
+      >
+        <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+        {label}
+      </a>
+    ) : (
+      <span className="text-zinc-400">{label}</span>
+    );
+  },
   h1: ({ children }) => <h1 className="text-xl font-semibold mt-6 mb-3 text-zinc-50">{children}</h1>,
   h2: ({ children }) => <h2 className="text-lg font-semibold mt-6 mb-3 text-zinc-50">{children}</h2>,
   h3: ({ children }) => <h3 className="text-base font-semibold mt-5 mb-2 text-zinc-50">{children}</h3>,

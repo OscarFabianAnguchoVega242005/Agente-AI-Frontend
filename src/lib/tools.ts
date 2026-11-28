@@ -11,6 +11,9 @@ import {
   Hourglass,
   KeyRound,
   List,
+  Mail,
+  MailOpen,
+  MailPlus,
   Search,
   Wrench,
   Zap,
@@ -192,6 +195,36 @@ export function describeStep(step: AgentStep): StepView {
         label: `Revisó el commit ${str(input.sha).slice(0, 7)}`,
         failed,
         link: !failed && url.startsWith('https://github.com/') ? { href: url, text: 'Ver commit' } : undefined,
+      };
+    }
+    case 'gmail_search': {
+      const out = parseJson(step.tool_output);
+      const found = out && typeof out.found === 'number' ? out.found : null;
+      const query = str(input.query).trim();
+      const short = query.length > 60 ? `${query.slice(0, 60)}…` : query;
+      return {
+        icon: Mail,
+        label: `Buscó en Gmail${short ? `: "${short}"` : ' en la bandeja de entrada'}${
+          found === null ? '' : found === 0 ? ' (sin resultados)' : ` (${found} correo${found === 1 ? '' : 's'})`
+        }`,
+        failed,
+      };
+    }
+    case 'gmail_read': {
+      const out = parseJson(step.tool_output);
+      const subject = out ? str(out.subject) : '';
+      const short = subject.length > 70 ? `${subject.slice(0, 70)}…` : subject;
+      return { icon: MailOpen, label: short ? `Leyó el correo "${short}"` : 'Leyó un correo', failed };
+    }
+    case 'gmail_create_draft': {
+      const out = parseJson(step.tool_output);
+      const to = (out && str(out.to)) || str(input.to);
+      const url = out ? str(out.url) : '';
+      return {
+        icon: MailPlus,
+        label: `${out?.reply ? 'Preparó una respuesta' : 'Creó un borrador'}${to ? ` para ${to.length > 60 ? `${to.slice(0, 60)}…` : to}` : ''}`,
+        failed,
+        link: !failed && url.startsWith('https://mail.google.com/') ? { href: url, text: 'Abrir en Gmail' } : undefined,
       };
     }
     case 'save_project_memory':

@@ -29,6 +29,7 @@ import {
   type DraftAttachment,
 } from './lib/attachments';
 import { completeGithubOAuth, isGithubCallback } from './lib/githubOAuth';
+import { clearConnectorNotice, readConnectorNotice } from './lib/gmailOAuth';
 import { COARSE_POINTER, useMediaQuery } from './hooks/useMediaQuery';
 import {
   isFinished,
@@ -36,6 +37,7 @@ import {
   type AgentMode,
   type ConversationTurn,
   type GithubUser,
+  type GmailConnector,
   type RepoItem,
   type TaskSummary,
 } from './types';
@@ -124,8 +126,10 @@ function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: st
   const [ghUser, setGhUser] = useState<GithubUser | null>(null);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [oauthAvailable, setOauthAvailable] = useState(false);
-  const [connectorsOpen, setConnectorsOpen] = useState(isGithubCallback);
-  const [connectorNotice, setConnectorNotice] = useState<Notice>(null);
+  const [gmail, setGmail] = useState<GmailConnector>({ connected: false, available: false });
+  // Se abre al volver de GitHub o de conectar Gmail con redirección completa (con su aviso)
+  const [connectorsOpen, setConnectorsOpen] = useState(() => isGithubCallback() || readConnectorNotice() !== null);
+  const [connectorNotice, setConnectorNotice] = useState<Notice>(readConnectorNotice);
   const [oauthCompleting, setOauthCompleting] = useState(isGithubCallback);
   const oauthHandled = useRef(false);
 
@@ -188,6 +192,7 @@ function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: st
 
   const loadConnectors = useCallback(async () => {
     const data = await api.getConnectors();
+    setGmail(data.gmail ?? { connected: false, available: false });
     setGhConnected(Boolean(data.github?.connected));
     setOauthAvailable(Boolean(data.github?.oauthAvailable));
     setGhUser(data.github?.user ?? null);
@@ -195,7 +200,11 @@ function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: st
     setRepos(list);
     // Nunca se preselecciona un repositorio: solo se conserva el que el usuario eligió, si sigue existiendo
     setTargetRepo((prev) => (prev && list.some((r) => repoId(r) === prev) ? prev : ''));
+    return data;
   }, []);
+
+  // El aviso guardado tras una redirección completa se muestra una sola vez
+  useEffect(() => clearConnectorNotice(), []);
 
   const loadTasks = useCallback(async () => {
     setTasksLoading(true);
@@ -772,6 +781,7 @@ function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: st
                 </div>
                 <Suggestions
                   compact
+                  gmail={gmail.connected}
                   onPick={(s) => {
                     setMode(s.mode);
                     setDraft(s.prompt);
@@ -787,6 +797,7 @@ function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: st
               <Greeting name={greetingName} />
               {composer}
               <Suggestions
+                gmail={gmail.connected}
                 onPick={(s) => {
                   setMode(s.mode);
                   setDraft(s.prompt);
@@ -812,6 +823,7 @@ function Workspace({ email, fullName, avatarUrl }: { email: string; fullName: st
         oauthAvailable={oauthAvailable}
         ghUser={ghUser}
         repos={repos}
+        gmail={gmail}
         onChanged={loadConnectors}
         notice={connectorNotice}
         onNotice={setConnectorNotice}

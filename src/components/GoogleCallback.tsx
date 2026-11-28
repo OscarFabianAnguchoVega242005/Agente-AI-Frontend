@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import {
   GOOGLE_POPUP_NAME,
   clearPendingLogin,
@@ -8,6 +9,14 @@ import {
   sendToOpener,
   type GoogleAuthErrorCode,
 } from '../lib/googleAuth';
+import {
+  GMAIL_POPUP_NAME,
+  clearPendingGmail,
+  isGmailState,
+  readPendingGmail,
+  sendGmailToOpener,
+  storeConnectorNotice,
+} from '../lib/gmailOAuth';
 import { AtlasLogo } from './AtlasLogo';
 
 const ERROR_TEXT: Record<GoogleAuthErrorCode, string> = {
@@ -28,13 +37,55 @@ function takeResponse() {
   return { idToken: params.get('id_token'), state: params.get('state'), error: params.get('error') };
 }
 
-/** Página /auth/google: aquí vuelve Google con el token de identidad. */
+/** Vuelta de Google al conectar Gmail (?code=…&state=gmail.…): el código se canjea en el servidor. */
+function finishGmail(query: URLSearchParams, setMessage: (text: string) => void) {
+  const code = query.get('code');
+  const state = query.get('state');
+  const error = query.get('error');
+  window.history.replaceState(null, '', window.location.pathname); // el código no se queda en el historial
+
+  // Lo normal: la ventana de Conectores termina la conexión y esta se cierra
+  if (sendGmailToOpener({ state, code: code ?? undefined, error: error ?? undefined })) {
+    window.close();
+    return;
+  }
+
+  // Sin ventana principal (redirección completa, o el navegador cortó la relación): se termina aquí
+  const pending = readPendingGmail();
+  clearPendingGmail();
+  if (error) {
+    setMessage(error === 'access_denied' ? 'Cancelaste el acceso a Gmail.' : `Google devolvió un error (${error}). Vuelve a intentarlo.`);
+    return;
+  }
+  if (!code || !state || state !== pending) {
+    setMessage('No se pudo verificar la respuesta de Google. Vuelve a intentarlo desde Conectores.');
+    return;
+  }
+  void api
+    .gmailOAuthExchange(code, state)
+    .then((result) => {
+      storeConnectorNotice(
+        result.warning ? { type: 'info', text: result.warning } : { type: 'ok', text: `Gmail conectado: ${result.email}` }
+      );
+      if (window.name === GMAIL_POPUP_NAME) window.close(); // la ventana de Atlas recarga los conectores al cerrarse esta
+      window.location.replace('/');
+    })
+    .catch((err: Error) => setMessage(err.message));
+}
+
+/** Página /auth/google: aquí vuelve Google al iniciar sesión (token de identidad) o al conectar Gmail (código). */
 export function GoogleCallback() {
   const [message, setMessage] = useState<string | null>(null);
+  const [gmail] = useState(() => isGmailState(new URLSearchParams(window.location.search).get('state')));
 
   useEffect(() => {
     if (handled) return;
     handled = true;
+    if (gmail) {
+      finishGmail(new URLSearchParams(window.location.search), setMessage);
+      return;
+    }
+
     const { idToken, state, error } = takeResponse();
     const pending = readPendingLogin();
     const code: GoogleAuthErrorCode | null = error
@@ -72,7 +123,7 @@ export function GoogleCallback() {
       if (window.name === GOOGLE_POPUP_NAME) window.close();
       window.location.replace('/');
     });
-  }, []);
+  }, [gmail]);
 
   return (
     <div className="h-full flex items-center justify-center px-6 text-center">
@@ -93,7 +144,7 @@ export function GoogleCallback() {
           </>
         ) : (
           <p className="mt-5 flex items-center justify-center gap-2 text-sm text-zinc-400">
-            <LoaderCircle className="w-4 h-4 animate-spin" /> Conectando con Google…
+            <LoaderCircle className="w-4 h-4 animate-spin" /> {gmail ? 'Conectando Gmail…' : 'Conectando con Google…'}
           </p>
         )}
       </div>

@@ -56,7 +56,15 @@ export const api = {
       body: JSON.stringify({ code, state }),
     }),
 
-  disconnect: (provider: 'github') =>
+  gmailOAuthStart: () => request<{ url: string; state: string }>('/api/connectors/gmail/oauth/start', { method: 'POST' }),
+
+  gmailOAuthExchange: (code: string, state: string) =>
+    request<{ connected: true; email: string; avatar_url: string | null; warning?: string }>(
+      '/api/connectors/gmail/oauth/exchange',
+      { method: 'POST', body: JSON.stringify({ code, state }) }
+    ),
+
+  disconnect: (provider: 'github' | 'gmail') =>
     request<{ disconnected: true }>(`/api/connectors/${provider}`, { method: 'DELETE' }),
 
   listTasks: () => request<{ tasks: TaskSummary[] }>('/api/tasks'),

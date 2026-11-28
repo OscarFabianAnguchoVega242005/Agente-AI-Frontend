@@ -56,6 +56,14 @@ export interface ConversationTurn {
   attachments?: AttachmentView[];
 }
 
+export interface GmailConnector {
+  connected: boolean;
+  /** false si el servidor aún no tiene configurado el acceso a Gmail */
+  available: boolean;
+  email?: string;
+  avatar_url?: string | null;
+}
+
 export interface ConnectorsResponse {
   github: {
     connected: boolean;
@@ -63,6 +71,7 @@ export interface ConnectorsResponse {
     user?: GithubUser;
     repos: RepoItem[];
   };
+  gmail?: GmailConnector;
 }
 
 export function isFinished(status: TaskStatus): boolean {
